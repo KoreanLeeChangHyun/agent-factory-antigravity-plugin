@@ -1,7 +1,7 @@
 {
   "generatedBy": "distribution/port.py",
   "host": "antigravity",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "source": "https://github.com/KoreanLeeChangHyun/agent-factory-plugin-source",
-  "sourceCommit": "37e45d53843b9e5164e7929dc7d377f0c2fc6c7e"
+  "sourceCommit": "d84cbf5bc2af6564e60e3363c501f6a0cee3fd05"
 }
