@@ -12,7 +12,7 @@ Version: `1.0.19`
 ## Install
 
 ```sh
-agy plugin install github.com/KoreanLeeChangHyun/agent-factory-antigravity-plugin
+agy plugin install https://github.com/KoreanLeeChangHyun/agent-factory-antigravity-plugin
 ```
 
 The runtime uses the Antigravity CLI and its existing Google AI subscription login. No API
