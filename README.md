@@ -7,7 +7,7 @@ provides four Skills: `agent` for managed Work and Verification execution, `conv
 shared project rules, `document` for authoring and synchronizing project documents, and
 `tool`, a catalog of the plugin scripts and the Skill that owns each one.
 
-Version: `1.0.23`
+Version: `1.0.24`
 
 ## Install
 
