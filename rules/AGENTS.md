@@ -12,6 +12,8 @@ Verification, Documents, conventions or plugin tools). Ordinary conversations ar
 - Never read `runtime/` or `scripts/` source, `--help` output of unrelated commands, or run
   `doctor`/`capabilities` merely to learn how to submit. The Skill and its linked reference
   are the contract.
-- After `loop.py start`, wait with `loop.py drive --project-root PROJECT --work-agent ID
-  --loop-id LOOP_ID` (or repeated `loop.py status`) until the loop ends, then report the bound
-  result. Do not poll run event files.
+- After `loop.py start`, preserve accepted IDs and follow Main's captured task route and
+  completion/reporting contract. Acceptance is not completion; do not impose a separate
+  wait on routes that require returning after acceptance. When that contract calls for
+  observing a loop, use `loop.py status` or `loop.py drive --project-root PROJECT
+  --work-agent ID --loop-id LOOP_ID`. Do not poll run event files.
