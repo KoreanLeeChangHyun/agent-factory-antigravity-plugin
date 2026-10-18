@@ -19,8 +19,8 @@ def request(runtime, state, delta, *, agent_id, previous_run_id):
         f"Continue the same accepted task: {binding['workflowId']} / {binding['taskId']}.\n"
         f"Original request reference: {state['originalRequestPath']}\n"
         f"Previous run: {previous_run_id}\n"
-        "Preserve the original scope, completion criteria, required execution constraints and captured authority. "
-        "This addition changes no permissions or task identity. Complete the whole accepted task, including this correction.\n"
+        "Preserve scope, completion criteria, required execution constraints and captured authority. "
+        "No permission or task identity changes; complete the whole task including this correction.\n"
     )
     workflow = state.get("workflow") or {}
     task = next((item for item in workflow.get("tasks", []) if item.get("id") == binding["taskId"]), {})
@@ -31,11 +31,11 @@ def request(runtime, state, delta, *, agent_id, previous_run_id):
     if previous_workspace.get("id") and previous_workspace.get("id") != current_workspace.get("id"):
         header += f"Previous Work Unit: {previous_workspace['id']} at {previous_workspace.get('path')}; its result and receipt remain preserved history.\n"
     if retained:
-        header += "The same native session retains context; apply the delta below. Consult the original reference only if needed.\n"
+        header += "Session context retained: apply the delta; consult the original only if needed.\n"
     else:
         original = runtime.safe_read_bytes(Path(state["originalRequestPath"]), runtime.MAX_REQUEST_BYTES).decode("utf-8")
         header += (
-            "Session context is unavailable or changed. Recover the accepted context below before applying the delta.\n"
+            "Session context changed or unavailable: recover the accepted context below, then apply the delta.\n"
             f"Previous result: {previous.get('resultPath')}\nPrevious receipt: {previous.get('receiptPath')}\n"
             f"Completion criteria: {binding['completionCriteria']}\n\n"
             f"[Original accepted request — recovery context]\n{original}\n[End recovery context]\n"

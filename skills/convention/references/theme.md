@@ -62,6 +62,12 @@
 - Before reporting a UI change complete, compare it with neighboring components and
   the accepted design in the rendered interface. Source inspection or passing logic
   tests alone does not establish visual consistency.
+- Capture the actual rendered screen and open the saved images in an image viewer
+  for direct inspection. For a reported defect, capture the failing state before the
+  fix and the same state afterward; keep viewport, zoom, theme and interaction state
+  comparable. Saving a screenshot alone does not count as inspecting it. Use inspected
+  captures with the actual [E2E outcome and logs](testing.md#functional-completion)
+  to decide UI/UX testing completion.
 - For tabbed UI, switch through every tab at a fixed viewport and zoom. Compare outer
   bounds and header/tab/footer positions; inspect row heights, spacing and overflow.
 - Check supported themes and relevant interaction/content states, plus narrow or short
@@ -69,6 +75,10 @@
 - Correct in-scope mismatches before completion. Report which rendered environment and
   states were checked, and explicitly identify anything unavailable or unverified.
   A browser fixture is not evidence of a check in the actual host application.
+  Missing actual-screen capture or direct image inspection leaves visual testing unverified.
+- Link the inspected captures and associated [diagnostic logs](testing.md#diagnostic-logs)
+  from the existing run record. Follow [artifact storage](artifacts.md) for retained
+  screenshots; keep each capture's environment and reproduction state identifiable.
 
 <a id="svg-icons"></a>
 

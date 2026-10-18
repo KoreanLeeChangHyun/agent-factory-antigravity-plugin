@@ -15,6 +15,10 @@ Required: `--actor {human,ai}`, `--source SOURCE`, `--name NAME`
 Required: `--actor {human,ai}`, `--source SOURCE`, `--domain-id DOMAIN_ID`, `--name NAME`
 - `--expected-revision EXPECTED_REVISION`: Fail with domain_conflict if the list changed since this revision
 
+## `capacity`: Human only: set the maximum operating sessions; keep active work and all history
+Required: `--actor {human,ai}`, `--source SOURCE`, `--domain-id DOMAIN_ID`, `--max-sessions MAX_SESSIONS`
+- `--expected-revision EXPECTED_REVISION`: Fail with domain_conflict if the list changed since this revision
+
 ## `assign`: Place a worker in a real domain; ai cannot move a worker the Human placed
 Required: `--actor {human,ai}`, `--source SOURCE`, `--agent AGENT`, `--domain-id DOMAIN_ID`
 - `--expected-revision EXPECTED_REVISION`: Fail with domain_conflict if the list changed since this revision

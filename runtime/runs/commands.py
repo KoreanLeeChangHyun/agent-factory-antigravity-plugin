@@ -79,6 +79,9 @@ def command_status(runtime, args: argparse.Namespace) -> int:
             workspace = state.get("taskWorkspace") or {}
             paths = {"request": state.get("requestPath"), "result": state.get("resultPath"),
                      "receipt": state.get("receiptPath"), "capability": state.get("capabilityBindingPath"),
+                     "trace": state.get("tracePath"), "trace-error": state.get("traceErrorPath"),
+                     "events": state.get("eventsPath"),
+                     "provider-events": state.get("providerEventsPath"),
                      "loop": workspace.get("loopStatePath")}
             path = paths[document]
             if not path:
@@ -86,7 +89,7 @@ def command_status(runtime, args: argparse.Namespace) -> int:
             # Only captured run references, never an arbitrary caller-supplied path.
             raw = runtime.safe_read_bytes(Path(path), None)
             try:
-                value = raw.decode("utf-8") if document in {"request", "result"} else json.loads(raw)
+                value = raw.decode("utf-8") if document in {"request", "result", "trace", "events", "provider-events"} else json.loads(raw)
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 raise runtime.ContractError("read_document_invalid", "document is not valid UTF-8 text/JSON") from error
         emit_read_page(runtime, args, value, force=True)
@@ -149,7 +152,10 @@ def command_reset_conversation(runtime, args: argparse.Namespace) -> int:
     with runtime.file_lock(directory / ".dispatch.lock"):
         session = runtime.load_session(root, args.agent)
         if session.get("role") != "main":
-            raise runtime.ContractError("conversation_reset_role_invalid", "Conversation reset is available only for Main Agents")
+            from conductor import team
+            held = team.holds(team.observe(runtime, root)).get(args.agent, [])
+            if any(item["kind"] in team.BLOCKING for item in held):
+                raise runtime.ContractError("session_busy", "Finish or close this performer's assigned tasks before resetting its context")
         if any(state.get("status") in runtime.ACTIVE_STATES for state in runtime.iter_run_states(root, args.agent)):
             raise runtime.ContractError("session_busy", "Finish or cancel the active run before clearing the conversation")
         own_runs = list(runtime.iter_run_states(root, args.agent))
@@ -241,6 +247,8 @@ def stop_run(runtime, root: Path, agent: str, run_id: str) -> None:
         value.update({"cancelRequested": True, "status": "cancelling"})
 
     state = runtime.update_json(path, path.parent / ".state.lock", request)
+    from runs import trace
+    trace.record(state, "run.cancel_requested")
     runtime.adapters.for_session(state).before_stop(path, state, cancel=True)
     containment_value = state.get("containment")
     if containment_value is None:

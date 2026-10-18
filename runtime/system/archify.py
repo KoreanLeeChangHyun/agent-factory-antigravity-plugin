@@ -15,6 +15,8 @@ import tempfile
 import urllib.error
 import urllib.request
 
+from storage.artifacts import artifact_output
+
 LOCK = json.loads(Path(__file__).with_name("archify-lock.json").read_text(encoding="utf-8"))
 TYPES = ("architecture", "sequence")
 
@@ -122,14 +124,9 @@ def project_path(value: Path, root: Path) -> Path:
 
 
 def artifact_path(value: Path, root: Path) -> Path:
-    path = project_path(value, root)
-    artifact = root / "docs" / "artifact"
-    if not path.is_relative_to(artifact) or len(path.relative_to(artifact).parts) < 3:
-        raise ValueError("Output must be docs/artifact/<category>/<topic>/<name>.html.")
+    path = artifact_output(project_path(value, root), root, required=True)
     if path.suffix.lower() != ".html":
         raise ValueError("Output must have the .html extension.")
-    if not path.parent.is_dir():
-        raise ValueError("Output parent does not exist. Prepare the agreed docs/artifact/<category>/<topic>/ directory first.")
     return path
 
 

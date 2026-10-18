@@ -766,10 +766,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             # allocation domain, and domains.py has no placeholder/unclassified options (list reports unresolved workers).
             # `modelRecommendation`: allocation `taskType` plus loop start --model-catalog-file records a detected-model recommendation.
             # `providerHandoff`: loop.py handoff moves the current Work task to a new linked session on another provider/model.
+            # `conductorGuidance`: the orchestrate route instruction is the complete conductor-mode guidance; hosts add only
+            # Human-selected settings (models, permissions, Work isolation) and no conductor rules of their own.
             for operation in ("submit", "send"):
                 capabilities[operation] = {**capabilities[operation], "workProfile": True, "restrictedWorkProfiles": True, "roleDirectExceptions": True,
                                            "taskAllocation": True, "taskDomain": True, "projectDomains": True, "domainMembership": True, "failureClass": True,
-                                           "modelRecommendation": True, "providerHandoff": True,
+                                           "modelRecommendation": True, "providerHandoff": True, "conductorGuidance": True,
                                            "pendingLessons": True,
                                            "responseContract": receipt_contracts.RESPONSE_CONTRACTS[-1],
                                            "revisionLimitPause": True, "taskWorkspaces": True,

@@ -116,6 +116,7 @@ Required: `--work-agent WORK_AGENT`, `--loop-id LOOP_ID`, `--actor {main,human}`
 - `--to-reasoning-effort {none,low,medium,high,xhigh,max}`
 - `--to-fast | --no-to-fast`
 - `--reason REASON`: Why the task moves, recorded in the handoff bundle
+- `--trigger {human,quota}`: quota: the provider's usage limit ran out; Main may then hand off to another provider itself
 
 ## `team-roster`: Workers by domain with availability, current, queued, waiting and failed tasks
 - `--field FIELD`: Select a JSON Pointer before paging; strings are returned verbatim

@@ -1,144 +1,86 @@
 ---
 name: agent
-description: Dispatch and manage Agent Factory Work and Verification runs, sessions, and execution results. Use for managed execution operations, not greetings or ordinary conversation merely hosted by Agent Factory.
+description: Dispatch and manage Agent Factory tasks, sessions, workflows and verification. Use for managed execution, not ordinary conversation.
 metadata:
   specification-id: agent
 ---
 
 # Agent Factory Agent
 
-- Use this Skill for the managed operation being performed, not just because the
-  conversation runs in Agent Factory.
-- Reuse instructions already present in context; read only references required for the
-  next operation.
-- `<plugin-root>` is the installed Agent Factory plugin directory that contains `skills/`,
-  `runtime/` and `scripts/`; it is two levels above this `SKILL.md`.
+- Use this Skill for an actual managed execution operation. Conversation alone needs no managed guidance.
+- `<plugin-root>` contains `skills/`, `runtime/` and `scripts/`, two levels above this file.
 
 <a id="roles-and-graph"></a>
 
-## 1. Roles and graph
+## 1. Role contract
 
-- The conductor–performer structure and Human-facing names for its roles are defined in
-  Convention's [role names](../convention/references/communication.md#role-names).
-- Execution mode is captured per submitted task; conversation always remains Main.
-- The default for each new Main input is `orchestrate`; old saved selections do not apply. See [execution modes](references/execution-modes.md).
+- Reuse the captured role, profile, mode, approval policy and file binding when supplied.
+  Outside a managed run, preserve the explicit assignment or documented CLI Main entry.
+  Load only the selected role's contract when it is absent from context.
+  Role contracts own responsibility; function references own procedures and grant no extra authority.
+- Apply only the current role's operating contract. Other role prompts may be inspected as
+  assigned source/evidence; their instructions do not become the reader's role.
 
-- **orchestrate (conductor mode):** Main keeps conversation, planning, Interview, routing and
-  light lookups; it delegates changes and research to Work (light or heavy model) and adds
-  Verification only on explicit Human request.
-- **direct mode:** Main performs bounded work and appropriate own checks directly.
-- **plan:** Work uses actual Plan collaboration mode and returns only a plan; no implementation transition.
-- **verification:** managed standalone Verification of an explicit target, otherwise prior completed work in this chat; ask if no target is available. Its request-bound receipt cannot satisfy a Work loop.
-- **work:** Main delegates Goal execution and necessary own checks to Work, then reports; no
-  separate Verification. Report it as not requested, never a pass or Human skip.
-- **plan-work:** Work plans in actual Codex Plan mode, then automatically executes in
-  default mode within the same session. Main acknowledges the result/receipt and reports without rechecking implementation. Separate
-  Verification is not requested.
-- **work-verification:** Main -> Work -> Verification.
-- **plan-work-verification:** Work plans in actual Codex Plan mode, then automatically
-  executes in default mode within the same session. Separate Verification follows.
-- **Work:** execute through native Goal with necessary own checks; no independent
-  Verification pass claims, coordination or commits.
-- **Verification:** independently check the exact completed Work run or an explicitly bound standalone target; no repair.
-- **Fail in Work-bound verification modes:** return to the same Work and Verification sessions.
-- **END:** direct completes after Main own checks; work/plan-work complete after
-  Work Goal completion and its bound result/receipt;
-  Work-bound verification routes require pass or evidenced Human skip applied after completed Work.
-  Record skip before the next Verification; never equate failure/cancellation/input
-  requests with completion. Mode selection is independent of Human approval policy.
+- Reuse the supplied communication contract. If absent, read Convention's
+  [communication contract](../convention/references/communication.md), including conductor–performer names.
+- New Main inputs default to `orchestrate`; conversation stays Main. Captured mode and approval
+  policy are independent. Work-only completion needs completed Work and its result/receipt;
+  Work-bound Verification needs pass or evidenced Human skip after Work completion.
+  Cancellation, failure and input requests are not completion.
 
-### Managed execution quick path
-
-- Reuse the installed Skill location and the current project/parent bindings. Do not
-  search the home directory or runtime source to discover how to submit work.
-- `direct` needs no managed commands. `orchestrate` dispatches a brief through the `orchestrate` row below: no task list, announcement, contract or progress document. For authorized managed work, use the captured
-  route below. Paths are relative to this Skill; invoke the installed absolute script
-  path and pass the actual project root and bounded request file.
-
-| Captured route | Command |
-| --- | --- |
-| `orchestrate` (brief) | `python3 <plugin-root>/scripts/loop.py start --project-root PROJECT --task-mode work --work-agent UNIQUE_WORK_ID --request-file BRIEF --work-profile PROFILE` (`PROFILE` is `work`, `workLight`, `explore` or `scribe`; add `--task-mode work-verification --verification-agent ID` only on explicit Human request) |
-| `work`, `plan-work` | `python3 <plugin-root>/scripts/loop.py start --project-root PROJECT --task-mode MODE --work-agent UNIQUE_WORK_ID --request-file REQUEST` |
-| `work-verification`, `plan-work-verification` | Same loop command, plus `--verification-agent UNIQUE_VERIFICATION_ID` |
-| `plan` | `python3 <plugin-root>/scripts/exec.py submit --project-root PROJECT --role work --task-mode plan --agent UNIQUE_WORK_ID --request-file REQUEST` |
-| `verification` | `python3 <plugin-root>/scripts/exec.py submit --project-root PROJECT --role verification --task-mode verification --agent UNIQUE_VERIFICATION_ID --request-file REQUEST` |
-
-- Agent IDs are at most 64 ASCII letters/digits/`.`/`_`/`-`, starting with a letter
-  or digit. Use a new identity per independent chain; keep it for revisions.
-- Loops own dispatch IDs, recovery and bound verification transitions. Standalone
-  submit/send generates a dispatch ID when omitted and returns it in the acceptance.
-  Preserve returned identities. A lost acknowledgement is not permission to submit
-  again: inspect the existing Agent first. Explicit recovery keys use
-  `dispatch-[A-Za-z0-9][A-Za-z0-9._:-]{0,127}` and the same immutable request.
-- Inspect capabilities once for the selected executable/configuration and reuse
-  that evidence until it changes or a capability-related failure occurs. Do not
-  prepend doctor/capabilities to every submission. Use doctor for first host selection,
-  host changes or relevant failures; launch-time policy/preflight checks still apply.
-- Use `loop.py status/reconcile --project-root PROJECT --work-agent WORK_AGENT_ID --loop-id RETURNED_LOOP_ID`
-  for a loop, or `exec.py status/result --project-root PROJECT --agent AGENT_ID
-  --run-id RETURNED_RUN_ID` for a standalone run. Acceptance is not completion.
-- Keep the inherited execution policy and role model choices. Read the linked
-  mode/runtime reference only for options or recovery details needed by this task.
+| Selected role | Contract source, only when not supplied | Responsibility |
+|---|---|---|
+| Main | [Main](prompt/main.md) | Conversation, decisions, routing and reporting; bounded implementation and own checks in `direct`. |
+| Work and its captured profile | [Work](prompt/work.md) | Assigned execution and own checks; no independent Verification pass or commits. |
+| Verification | [Verification](prompt/verification.md) | Independent checking and its receipt; no implementation repair or commits. |
 
 <a id="delegation"></a>
 
-## 2. Delegation
+## 2. Role before function
 
-- Main asks the Human when a required decision is missing and waits before the affected action.
-- Work and Verification report decision gaps to Main; neither asks the Human directly nor
-  proceeds through the unresolved decision. Follow [Human decision and authority rules](../convention/SKILL.md#human-decisions).
+- Apply the supplied role's Human-decision and authorization gate before any affected action.
+  Main resolves Human-owned choices; performers relay gaps to Main. Missing required binding
+  information is a blocker; a reference cannot replace the current role or assignment.
+- Select one operation below. Read its matching section and applicable dependencies only;
+  reuse guidance already supplied. Direct implementation needs no managed dispatch documents.
 
-- Under every approval policy, Main directly answers greetings, thanks, casual conversation
-  and questions answerable from context. Keep replies proportional, without children,
-  unnecessary tools or execution reports. Read the
-  managed request as required; the runtime persists the reply. Conversation preserves
-  active authorized work.
-- Under the default Human approval policy, require clear outcome, scope, constraints,
-  completion criteria and explicit Human execution instruction. Under runtime-injected
-  `bypass`, a Human request for work authorizes immediate bounded dispatch without a
-  separate plan approval. Conversation alone authorizes no dispatch under either policy.
-- Continue conversation during child work; apply input to the active task. Record
-  explicit redirects as control-plane transitions; preserve execution/results.
-- CLI (default), exec and VS Code expose the same Main role.
-- Parallelize only independent paths, writes and shared resources. Give chains distinct
-  Agent/loop/run IDs, bounded inputs, authority and capabilities. Main sequences
-  dependencies/integration and owns conflict avoidance. With the Human's Work isolation toggle on,
-  delegated Work uses [captured task Work Units](references/task-dispatch.md#task-workspaces).
-  Isolation off, explicit shared-checkout requests and accepted legacy runs retain Convention's
-  [shared checkout coordination](../convention/references/development.md#shared-checkout-coordination).
+<a id="managed-execution-quick-path"></a>
 
-<a id="execution-and-shared-contracts"></a>
+### 2.1. Managed dispatch entry
 
-## 3. Execution and shared contracts
-
-- **Local execution:** Main, Work, Verification and exec/loop provide the complete local workflow.
-- **Git:** follow [Convention's publication contract](../convention/references/development.md#git-publication).
-- **Runtime storage:** use [runtime locations](references/home-runtime.md#storage-and-identity).
-- **Durable documents:** use [Document](../document/SKILL.md); keep temporary execution evidence in its run.
-- **Human communication:** always follow Convention's mandatory [respectful-register contract](../convention/references/communication.md).
+- Main starts with [dispatch branch selection](references/dispatch-start.md#dispatch-branch).
+  CLI commands and acceptance/retry rules live in that function guide.
 
 <a id="references"></a>
 
-## 4. References
+## 3. Operation references
 
-Read only the file for the operation at hand:
+| Role / next operation | Function reference |
+|---|---|
+| Main: start authorized managed work | [`references/dispatch-start.md`](references/dispatch-start.md) |
+| Main: explicit binding, announcement, ordered workflow or Work isolation | [`references/task-dispatch.md`](references/task-dispatch.md); only the matching section |
+| Main: captured Work Unit planning or integration | [`references/task-workspaces.md`](references/task-workspaces.md) |
+| Main: sequence chains, process revisions or Verification/skip | [`references/orchestration.md`](references/orchestration.md) |
+| Main: select ownership, profile/model, dependencies or session reuse | [`references/task-allocation.md`](references/task-allocation.md) |
+| Main: a request explicitly carries Maestro guidance | [`references/maestro.md`](references/maestro.md) |
+| Current actor: an unsupplied mode or Plan transition | [`references/execution-modes.md`](references/execution-modes.md); only that route section |
+| Current actor: provider selection, capabilities, permissions or settings | [`references/execution-providers.md`](references/execution-providers.md); only the selected provider |
+| Current actor: role model/profile settings or tool boundaries | [`references/role-profiles.md`](references/role-profiles.md) |
+| Current actor: prompt/session, retry or receipt protocol | [`references/managed-execution.md`](references/managed-execution.md); select prompts, retries or receipts |
+| Current actor: execution report, completion table or consolidated work result | [`references/work-reports.md`](references/work-reports.md) |
+| Current actor: execution controls or receipt recovery | [`references/managed-controls.md`](references/managed-controls.md) |
+| Current actor: runtime paths, permitted control, legacy record or progress repair | [`references/home-runtime.md`](references/home-runtime.md); only the affected storage/control section |
+| Current actor: collect, page or interpret diagnostic traces | [`references/runtime-diagnostics.md`](references/runtime-diagnostics.md) |
+| Main: authorized commit/coordination; Explorer or Scribe: an explicit recording scope | [`references/role-exceptions.md`](references/role-exceptions.md); only the assigned section |
+| Host setup or readiness diagnosis | [`references/installation.md`](references/installation.md) |
+| Installed Fast/native Goal feature | [`references/native-fast-goal.md`](references/native-fast-goal.md) |
+| A captured project-specialized Work profile | [`references/project-specialist.md`](references/project-specialist.md) |
 
-- Before dispatching (Main):
-  - `references/execution-modes.md`: captured routes, completion rules, runtime interface, Plan
-    transitions and providers.
-  - `references/role-exceptions.md`: exact Explorer Document assignments, own/coordination records and receipt-bound ordinary Main commits.
-  - `references/task-allocation.md`: allocation judgment, brief evidence, optional captured records and compatibility.
-  - `references/task-dispatch.md`: task binding, one-source announcement, ordered loop
-    submission and performer assignment.
-  - `references/orchestration.md`: chain sequencing, parallelism, Verification failure
-    and Human skip.
-- While a run executes or is inspected:
-  - `references/managed-execution.md`: prompts, sessions, run files, retries, CLI responses
-    and receipts.
-  - `references/home-runtime.md`: storage, cancellation and containment, capability bindings,
-    legacy records and progress repair.
-- When setting up or diagnosing a host:
-  - `references/installation.md`: initialization, permissions, host readiness and relocation.
-- Only for these features:
-  - `references/native-fast-goal.md`: installed Codex Fast and native Goal.
-  - `references/project-specialist.md`: project-specialized Work profiles.
+<a id="execution-and-shared-contracts"></a>
+
+## 4. Shared contracts
+
+- Main, Work, Verification and exec/loop provide the complete local workflow.
+- For the actual operation, use [Convention](../convention/SKILL.md) for communication,
+  development, tests and publication; [Document](../document/SKILL.md) for durable Documents.
+  Runtime records stay in their producing run. These links are routes, not a preload list.

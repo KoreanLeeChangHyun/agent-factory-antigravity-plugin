@@ -16,7 +16,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
 from storage import document_migration  # noqa: E402
-from tasks import orchestrator_guard  # noqa: E402
+from hooks import orchestrator_guard  # noqa: E402
 
 
 MANIFEST_NAME = "migration-manifest.json"

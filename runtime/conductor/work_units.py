@@ -9,8 +9,8 @@ from pathlib import Path
 from storage import files
 from storage.errors import ContractError
 from tasks import workspaces
-from tasks.conductor_queue import digest
-from tasks.conductor_intents import scope_paths
+from conductor.queue import digest
+from conductor.intents import scope_paths
 
 
 class WorkUnits:

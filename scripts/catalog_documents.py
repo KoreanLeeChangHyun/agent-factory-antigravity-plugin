@@ -156,14 +156,22 @@ def catalog_entry(root: Path, package: Path, kind: str) -> dict:
     else:
         if files.get("SKILL.md") != "file":
             raise ValueError(f"{kind.capitalize()} package needs SKILL.md: {package}")
-        metadata_path = package / "SKILL.md"
-        metadata = document_metadata(read_frontmatter(metadata_path), metadata_path)
+        entry_path = package / "SKILL.md"
+        frontmatter = read_frontmatter(entry_path)
+        metadata_path = package / "metadata.yaml"
+        if metadata_path.exists():
+            if "document-type" in frontmatter or "metadata" in frontmatter:
+                raise ValueError(f"Document metadata must have one source, not front matter and metadata.yaml: {package}")
+            metadata = read_yaml(metadata_path)
+        else:
+            metadata_path = entry_path
+            metadata = document_metadata(frontmatter, entry_path)
         links = metadata.get("links", [])
         if not isinstance(links, list) or any(
             not isinstance(link, str) or not link.strip() for link in links
         ):
             raise ValueError(f"{kind.capitalize()} metadata links must be strings: {metadata_path}")
-        content_path = str(metadata_path.relative_to(root))
+        content_path = str(entry_path.relative_to(root))
     validate_metadata(metadata, kind, metadata_path)
     return {
         "documentType": kind,

@@ -8,7 +8,7 @@
   Refined/Specification (Skill) body format.
 - Original is a source-faithful reference to evidence. Do not copy, rewrite, translate
   or convert the referenced source into the package.
-- Store packages at `docs/original/<category>[-<domain>]-<name>/`.
+- Use the [directory layout](layout.md) for package paths.
 
 <a id="source-metadata-and-content"></a>
 
@@ -24,7 +24,7 @@
 - Preservation and migration requirements grant no destructive local cleanup rule.
 
 - Catalog and search read this metadata without fetching links. Follow the shared
-  [catalog and search contract](host-sync.md#local-document-catalog-and-search).
+  [catalog and search contract](catalog-search.md#local-document-catalog-and-search).
 
 - Preserve source identifiers, provenance and link strings exactly. A response-language
   choice alone does not authorize translating or rewriting them.

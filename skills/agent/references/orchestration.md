@@ -21,9 +21,8 @@
 - Each chain stays sequential.
   - In Work-bound verification modes bind separate Verification to exact completed Work unless
     Human skip applies.
-  - In work and plan-work modes acknowledge completed Work and its receipt, report
-    its own checks, and end without separate Verification. Do not review implementation
-    or rerun tests. Acceptance/status/receipt identity checks are not re-verification.
+  - In work and plan-work modes apply [result alignment](#result-alignment) to completed
+    Work, report its own checks, and end without separate Verification.
   - Plan alone dispatches Work with `--task-mode plan` and stops at its plan.
   - Plan-work routes use actual collaboration-mode transitions in the same Work session
     through loop.py.
@@ -45,3 +44,26 @@
 - **Human skip:** record actor, authorization reference and decision evidence before the
   next Verification. Intent alone is no transition. Apply only after current
   initial/revision Work completes; reach END without starting further Verification.
+
+<a id="result-alignment"></a>
+
+## 3. Result alignment
+
+- Main owns agreement between the Human's request and the delivered result; the Human
+  is not asked to check what Main can observe (Human decision 2026-10-18).
+- Before dispatch, write Done as the Human-observable outcome and the evidence that will
+  show it: file content, screen state, log entry, command result or record.
+- On completed Work, before reporting, compare Done with evidence Main can read: the
+  result and receipt, changed paths in read-only Git, the named files and records, and
+  the captures and logs the result cites. Look at the outcome; do not re-implement,
+  review code style or rerun test suites. This is not Verification, which still runs
+  only on explicit Human request.
+- When evidence contradicts Done or is missing for an observable Done item, revise the
+  same task with the exact gap (`loop.py revise` with actor `main`, the Human's source
+  message as authorization; same performer and session) and tell the Human in one line;
+  report after the evidence matches. After two such revisions of a task, when closing the
+  gap needs a Human-owned choice, or for runs outside a loop (plan-only, standalone
+  Verification), report the gap with its evidence instead.
+- Report the checked evidence (paths, record IDs, capture paths) with the outcome.
+  Failed, cancelled and needs-human-decision outcomes are reported as recorded and are
+  not revised automatically.

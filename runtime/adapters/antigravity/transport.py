@@ -26,8 +26,9 @@ from adapters.antigravity.policy import effort, native_model, validate
 from execution.prompts import PromptParts
 from storage import paths as runtime_paths
 from storage.errors import ContractError
-from tasks import orchestrator_guard
+from hooks import orchestrator_guard
 from storage.files import now, safe_read_json
+from runs import trace
 
 # Host markers that describe the invoking agent, never this child.
 HOST_MARKERS = ("CODEX_THREAD_ID", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "ANTIGRAVITY_CONVERSATION_ID", "ANTIGRAVITY_AGENT")
@@ -84,6 +85,7 @@ class GoalTracker:
 
 def main():
     process = None
+    state = {}
     goal = events = None
     try:
         state = safe_read_json(Path(sys.argv[1]))
@@ -109,16 +111,23 @@ def main():
             command, turns = cli_command({**session, "sessionId": session_id, "effortLevels": levels}, state, parts, phase)
             if len(turns) > 1:
                 goal = GoalTracker(session, state, turns)
+            reference = trace.snapshot(state, "provider.delivery.requested", {"turns": turns},
+                                       phase=phase, sessionId=session_id)
+            trace.record(state, "provider.process.launching", phase=phase, command=command,
+                         workingDirectory=session.get("workingDirectory", session["projectRoot"]))
             # No new session/group: parent runtime containment must include all descendants.
             process = subprocess.Popen(command, cwd=session.get("workingDirectory", session["projectRoot"]),
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True,
                                        encoding="utf-8", env=environment)
             for _, message in turns:
+                trace.provider_message(state, "send", message, phase=phase)
                 process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
             process.stdin.close()
+            trace.record(state, "provider.delivery.written", phase=phase, snapshot=reference)
             events = Events(session_id, terminal=phase != "plan", nullable=result_schema(state)[1],
                             turns=[kind for kind, _ in turns])
             for line in process.stdout:
+                trace.provider_message(state, "receive", line, phase=phase)
                 if not line.strip():
                     continue
                 translated = events.translate(json.loads(line))
@@ -135,6 +144,7 @@ def main():
                 for item in translated:
                     emit(item)
             code = process.wait()
+            trace.record(state, "provider.process.exited", phase=phase, returnCode=code)
             if code != 0 or not events.finished:
                 raise ContractError("native_backend_error" if code else "result_missing",
                                     f"Antigravity exited with {code}; terminal result received: {events.finished}")
@@ -146,6 +156,7 @@ def main():
                 return 0
         return 0
     except (OSError, ValueError, KeyError, ContractError) as error:
+        trace.exception(state, "provider.adapter.failed", error)
         if goal is not None:
             with contextlib.suppress(Exception):
                 goal.finish(events, succeeded=False)

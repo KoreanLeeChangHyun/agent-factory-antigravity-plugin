@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import queue
+import re
 import signal
 import stat
 import subprocess
@@ -17,7 +18,14 @@ from typing import Any
 
 from adapters.plan_progress import first_line
 from execution.usage import context_observation
+from execution.measurement import AttemptMeasurement, save as save_measurement
 from execution.handoff import observe_runtime
+from runs import trace
+
+# A provider's usage or rate limit, however the CLI words it (2026-10-17: Codex "exceeded retry limit, last status: 429
+# Too Many Requests"; Claude "usage limit reached"). Such a stop is classified `quota` so the work moves to another
+# provider instead of being reported as a model failure.
+QUOTA_MESSAGE = re.compile(r"\b429\b|too many requests|usage[ _-]?limit|rate[ _-]?limit|quota|usageLimitExceeded|limit reached", re.I)
 
 
 def cancel_requested(runtime, state_path: Path, cancel_event: threading.Event, reader=None) -> bool:
@@ -82,7 +90,7 @@ def run_codex_attempt(
     if state.get("workingDirectory", str(working_directory)) != str(working_directory):
         raise runtime.AttemptFailure("worktree_binding_changed", "Run working directory no longer matches its conversation", False)
     session["workingDirectory"] = str(working_directory)
-    from tasks.orchestrator_guard import profile_instruction
+    from hooks.orchestrator_guard import profile_instruction
     from execution.prompts import PromptParts
     prompt_parts = PromptParts(prompt_parts.fixed + profile_instruction(state, project_root, working_directory), prompt_parts.dynamic)
     allocation = state.get("taskBinding", {}).get("allocation")
@@ -137,6 +145,7 @@ def run_codex_attempt(
     state["executionPolicy"] = policy
     state["executionPreflight"] = checked
     runtime.update_json(state_path, state_path.parent / ".state.lock", lambda value: value.update({"executionPreflight": checked, "executionPolicy": policy}))
+    trace.record(state, "preflight.checked", attempt=attempt, passed=checked.get("passed") is True, details=checked)
     # Stopping containment may close a preflight app-server. Cancellation owns that outcome.
     if runtime.cancel_requested(state_path, cancel_event):
         raise runtime.AttemptFailure("cancelled", "run was cancelled", False)
@@ -147,6 +156,13 @@ def run_codex_attempt(
     existing_session = session.get("sessionId")
     native_prompt = provider_adapter.uses_prompt_parts(session)
     prompt = prompt_parts.encode() if native_prompt else prompt_parts.full
+    trace.snapshot(state, "prompt.prepared", {"fixed": prompt_parts.fixed, "dynamic": prompt_parts.dynamic},
+                   attempt=attempt, transport="parts" if native_prompt else "text",
+                   model=session.get("model"), reasoningEffort=session.get("reasoningEffort"),
+                   sessionId=existing_session, workingDirectory=str(working_directory))
+    measurement = AttemptMeasurement(prompt_parts.fixed, prompt_parts.dynamic,
+                                     model=session.get("model"), provider=state.get("provider"))
+    save_measurement(runtime, state_path, state, attempt, measurement)
     command = runtime.adapters.for_session(session).build_command(session, state, existing_session, prompt_parts=native_prompt)
     stderr_path = state_path.parent / "stderr.log"
     runtime.reject_symlink(stderr_path)
@@ -156,6 +172,8 @@ def run_codex_attempt(
         value.update({"status": "starting", "attempt": attempt, "startDisposition": "launching"})
 
     runtime.update_json(state_path, state_path.parent / ".state.lock", launching)
+    trace.record(state, "process.launching", attempt=attempt, provider=state.get("provider", "codex"),
+                 command=command, workingDirectory=str(working_directory))
     try:
         process, codex_identity, release_fd = runtime.spawn_contained_process(
             command,
@@ -208,6 +226,7 @@ def run_codex_attempt(
         )
         release_attempted = True
         runtime.release_contained_process(process, codex_identity, release_fd)
+        trace.record(state, "process.started", attempt=attempt, pid=process.pid)
     except (runtime.ContractError, OSError) as error:
         runtime.abort_contained_process(
             process,
@@ -234,6 +253,8 @@ def run_codex_attempt(
         raise runtime.AttemptFailure(
             "codex_write_failed", "codex exec rejected the prompt", False, True
         ) from error
+    trace.record(state, "prompt.transport_written", attempt=attempt,
+                 bytes=len(prompt.encode("utf-8")), sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest())
     lines: queue.Queue[tuple[str, str | None]] = queue.Queue(maxsize=64)
     readers_stopped = threading.Event()
     threading.Thread(
@@ -254,6 +275,10 @@ def run_codex_attempt(
     stderr_eof = False
     control_reader = runtime.runtime_storage.ChangedJsonReader(state_path, runtime.safe_read_json)
     event_writer = runtime.EventLogWriter(Path(state["eventsPath"]))
+    event_offset = Path(state["eventsPath"]).stat().st_size if Path(state["eventsPath"]).exists() else 0
+    stream_started_ns = time.perf_counter_ns()
+    first_event = True
+    item_started_ns = {}
     usage = runtime.UsageAccumulator()
     runtime.update_json(state_path, state_path.parent / ".state.lock",
                 lambda value: runtime.record_attempt(value, attempt, usage.snapshot()))
@@ -317,7 +342,8 @@ def run_codex_attempt(
                     "event_invalid", "codex emitted an invalid event", started, True
                 )
             # Live text previews are superseded by later events; avoid one fsync per streamed fragment.
-            if not event_writer.append(line, durable=not line.startswith('{"type": "native.delta"')):
+            stored_line = trace.redact(line)
+            if not event_writer.append(stored_line, durable=not line.startswith('{"type": "native.delta"')):
                 stop_attempt()
                 raise runtime.AttemptFailure(
                     "event_log_limit_exceeded",
@@ -337,6 +363,31 @@ def run_codex_attempt(
                 raise runtime.AttemptFailure(
                     "event_invalid", "codex emitted an invalid event", started, True
                 )
+            event_bytes = stored_line.encode("utf-8")
+            if measurement.observe(event, len(event_bytes)):
+                save_measurement(runtime, state_path, state, attempt, measurement)
+            item = event.get("item")
+            item_id = item.get("id") if isinstance(item, dict) else None
+            item_duration_ms = None
+            if isinstance(item_id, (str, int)):
+                if event.get("type") == "item.started":
+                    item_started_ns.setdefault(item_id, time.perf_counter_ns())
+                elif event.get("type") == "item.completed":
+                    observed_start = item_started_ns.pop(item_id, None)
+                    if observed_start is not None:
+                        item_duration_ms = (time.perf_counter_ns() - observed_start) / 1_000_000
+            trace.record(state, "provider.event", attempt=attempt,
+                         eventType=event.get("type"),
+                         itemType=item.get("type") if isinstance(item, dict) else None,
+                         itemId=item_id, observedItemDurationMs=item_duration_ms,
+                         toolName=item.get("tool", item.get("name")) if isinstance(item, dict) else None,
+                         redacted=stored_line != line,
+                         originalSha256=hashlib.sha256(line.encode("utf-8")).hexdigest(),
+                         firstEventLatencyMs=(time.perf_counter_ns() - stream_started_ns) / 1_000_000 if first_event else None,
+                         source={"path": state["eventsPath"], "offsetBytes": event_offset,
+                                 "lengthBytes": len(event_bytes), "sha256": hashlib.sha256(event_bytes).hexdigest()})
+            first_event = False
+            event_offset += len(event_bytes)
             runtime.capture_lesson(project_root, state, event, attempt)
             observe_runtime(runtime, project_root, state, event)
             if event.get("type") == "error" and provider_adapter.fatal_error_events(session):
@@ -346,6 +397,8 @@ def run_codex_attempt(
                 code = event.get("code")
                 if code not in {"result_invalid", "result_missing", "authentication_required", "rate_limit_exceeded", "rpc_disconnected"}:
                     code = "native_backend_error"
+                if code != "authentication_required" and QUOTA_MESSAGE.search(message):
+                    code = "rate_limit_exceeded"
                 details = {key: event[key] for key in ("code", "stage", "turnId", "requestId", "acceptance") if key in event}
                 runtime.update_json(state_path, state_path.parent / ".state.lock",
                                     lambda value, details=details: value.update(adapterError=details))
@@ -356,6 +409,7 @@ def run_codex_attempt(
             if usage.observe(event):
                 runtime.update_json(state_path, state_path.parent / ".state.lock",
                             lambda value: runtime.record_attempt(value, attempt, usage.snapshot()))
+                trace.record(state, "usage.observed", attempt=attempt, usage=usage.snapshot())
             context_usage = context_observation(event, provider=state.get("provider", "codex"),
                                                 observed_at=runtime.now(),
                                                 provider_version=state.get("providerVersion"))
@@ -426,12 +480,14 @@ def run_codex_attempt(
                 if isinstance(text, str):
                     final_messages.append(text)
         return_code = process.wait(timeout=10)
+        trace.record(state, "process.exited", attempt=attempt, returnCode=return_code, started=started)
     except subprocess.TimeoutExpired as error:
         stop_attempt()
         raise runtime.AttemptFailure(
             "codex_exit_timeout", "codex exec did not exit", started, True
         ) from error
     finally:
+        save_measurement(runtime, state_path, state, attempt, measurement)
         readers_stopped.set()
         event_writer.close()
     # The leader may exit while descendants keep its isolated process group.
@@ -449,6 +505,8 @@ def run_codex_attempt(
         terminal = json.loads(final_messages[-1])
     except json.JSONDecodeError as error:
         raise runtime.AttemptFailure("result_invalid", "codex returned invalid terminal JSON", True) from error
+    trace.record(state, "result.reported", attempt=attempt,
+                 reportedStatus=terminal.get("status") if isinstance(terminal, dict) else None)
     if isinstance(terminal, dict) and terminal.get("status") == "failed":
         runtime.capture_lesson(project_root, state, {"type": "runtime.failure", "code": "agent_reported_failure"}, attempt)
     try:
@@ -465,6 +523,12 @@ def run_codex_attempt(
         raise runtime.AttemptFailure(error.code, error.message, True) from error
     except OSError as error:
         raise runtime.AttemptFailure("result_file_write_failed", "Runtime could not persist the terminal response", True) from error
+    if terminal["status"] == "failed":
+        # A valid failure response is not an unexplained process failure. Keep the
+        # Agent's result as the evidence; do not infer a retry class or success.
+        runtime.update_json(state_path, state_path.parent / ".state.lock", lambda value: value.update({
+            "error": {"code": "agent_reported_failure", "message": "The Agent reported failure; see the stored result for its reason."}
+        }))
     result_path = Path(state["resultPath"])
     try:
         result_info = os.lstat(result_path)
@@ -489,7 +553,14 @@ def run_codex_attempt(
             runtime.validate_receipt(
                 project_root, state, agent_id=expected_agent_id, run_id=expected_run_id)
         except runtime.ContractError as error:
+            trace.record(state, "receipt.rejected", attempt=attempt, code=error.code,
+                         receipt=trace.artifact(state.get("receiptPath")))
             raise runtime.AttemptFailure(error.code, error.message, True) from error
+        trace.record(state, "receipt.validated", attempt=attempt,
+                     receipt=trace.artifact(state.get("receiptPath")),
+                     validation="runtime-contract-only")
+    trace.record(state, "result.validated", attempt=attempt, status=terminal["status"],
+                 result=trace.artifact(state["resultPath"]), validation="runtime-contract-only")
     return str(terminal["status"]), active_session
 
 
@@ -543,11 +614,16 @@ def mark_terminal(
             finish_run(runtime, runtime.resolve_project_root(Path(value["runtimeBinding"]["projectRoot"])), value)
 
     try:
-        runtime.update_json(state_path, state_path.parent / ".state.lock", change)
+        terminal_state = runtime.update_json(state_path, state_path.parent / ".state.lock", change)
     except runtime.ContractError as error:
         if not active_only or error.code != "run_terminal":
             raise
         return False
+    # Journal only a committed transition, using the cancellation-resolved state.
+    trace.checkpoint(terminal_state, "run.final_state")
+    trace.record(terminal_state, "run.terminal", status=terminal_state["status"], error=terminal_state.get("error"),
+                 result=trace.artifact(terminal_state.get("resultPath")), receipt=trace.artifact(terminal_state.get("receiptPath")),
+                 stderr=trace.artifact(state_path.parent / "stderr.log"))
     if status == "completed":
         try:
             from execution.handoff import schedule_standby
@@ -592,11 +668,30 @@ def worker(runtime, args: argparse.Namespace) -> int:
                 runtime.mark_terminal(state_path, "cancelled")
                 heartbeat.update(status="cancelled", attempt=0, codex_pid=None)
                 return 1
+            from conductor import session_pool
+            pool_root = Path(runtime.runtime_paths.resolve(project_root)["runtimeRoot"])
+            try:
+                while True:
+                    current = runtime.safe_read_json(state_path)
+                    if current.get("status") in runtime.TERMINAL_STATES:
+                        return 0
+                    if runtime.cancel_requested(state_path, cancel_event):
+                        runtime.mark_terminal(state_path, "cancelled")
+                        return 1
+                    if session_pool.admit(pool_root, state_path):
+                        break
+                    heartbeat.update(status="queued", attempt=0, codex_pid=None)
+                    cancel_event.wait(1)
+            except (runtime.ContractError, OSError, ValueError) as error:
+                runtime.mark_terminal(state_path, "runtime-error", {"code": getattr(error, "code", "domain_capacity_unavailable"), "message": str(error)})
+                return 1
             max_attempts = int(state["maxAttempts"])
             while int(state.get("attempt", 0)) < max_attempts:
                 attempt = int(state.get("attempt", 0)) + 1
+                attempt_started_ns = time.perf_counter_ns()
                 try:
                     attempt_state = runtime.safe_read_json(state_path)
+                    trace.record(attempt_state, "attempt.started", attempt=attempt)
                     terminal_status, _session_id = runtime.run_codex_attempt(
                         project_root=project_root,
                         session=runtime.load_session(project_root, args.agent),
@@ -607,7 +702,10 @@ def worker(runtime, args: argparse.Namespace) -> int:
                         expected_agent_id=args.agent,
                         expected_run_id=args.run_id,
                     )
-                    runtime.mark_terminal(state_path, terminal_status)
+                    trace.record(attempt_state, "attempt.finished", attempt=attempt, status=terminal_status,
+                                 durationMs=(time.perf_counter_ns() - attempt_started_ns) / 1_000_000)
+                    runtime.mark_terminal(state_path, terminal_status,
+                                          runtime.safe_read_json(state_path).get("error") if terminal_status == "failed" else None)
                     terminal_status = runtime.safe_read_json(state_path)["status"]
                     heartbeat.update(
                         status=terminal_status, attempt=attempt, codex_pid=None
@@ -616,6 +714,9 @@ def worker(runtime, args: argparse.Namespace) -> int:
                 except runtime.AttemptFailure as failure:
                     if runtime.cancel_requested(state_path, cancel_event):
                         failure = runtime.AttemptFailure("cancelled", "run was cancelled", failure.started, failure.launched)
+                    trace.exception(state, "attempt.failed", failure, attempt=attempt, code=failure.code,
+                                    started=failure.started, launched=failure.launched,
+                                    durationMs=(time.perf_counter_ns() - attempt_started_ns) / 1_000_000)
                     if failure.code != "cancelled":
                         runtime.capture_lesson(project_root, state, {"type": "runtime.failure", "code": failure.code}, attempt)
                     disposition = (
@@ -660,6 +761,8 @@ def worker(runtime, args: argparse.Namespace) -> int:
                         ),
                     )
                     heartbeat.update(status="queued", attempt=attempt, codex_pid=None)
+                    trace.record(state, "attempt.retry_scheduled", attempt=attempt, nextAttempt=attempt + 1,
+                                 reason=failure.code)
             failure = runtime.AttemptFailure(
                 "attempts_exhausted", "no execution attempt remained", False
             )
@@ -673,6 +776,7 @@ def worker(runtime, args: argparse.Namespace) -> int:
             )
             return 1
     except runtime.ContractError as error:
+        trace.exception(state, "worker.failed", error)
         with contextlib.suppress(Exception):
             runtime.mark_terminal(
                 state_path, "failed", {"code": error.code, "message": error.message}
@@ -680,6 +784,7 @@ def worker(runtime, args: argparse.Namespace) -> int:
         heartbeat.update(status="failed", attempt=0, codex_pid=None)
         return 1
     except (OSError, UnicodeError, ValueError, KeyError, TypeError) as error:
+        trace.exception(state, "worker.failed", error)
         with contextlib.suppress(Exception):
             runtime.mark_terminal(
                 state_path,

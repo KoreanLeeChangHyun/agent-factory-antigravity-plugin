@@ -10,6 +10,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 
@@ -26,6 +27,60 @@ from execution.prompts import PromptParts
 from storage import paths as runtime_paths
 from storage.errors import ContractError
 from storage.files import now, safe_read_json
+from runs import trace
+
+# How long a session may take to exit by itself after its result before it is stopped.
+RESULT_EXIT_GRACE_SECONDS = 3
+
+
+def descendants(pid):
+    """Process IDs started under pid, found through /proc; empty where /proc is unavailable."""
+    children = {}
+    try:
+        entries = list(Path("/proc").iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat = (entry / "stat").read_text(encoding="ascii", errors="replace")
+            parent = int(stat[stat.rindex(")") + 2:].split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+        children.setdefault(parent, []).append(int(entry.name))
+    found, pending = [], [pid]
+    while pending:
+        for child in children.get(pending.pop(), []):
+            found.append(child)
+            pending.append(child)
+    return found
+
+
+def stop_after_result(state, process, phase):
+    """End the session once its result is in; True when it had to be stopped.
+
+    Claude Code keeps a print session alive while background tasks it started still run and resumes the turn when they
+    finish (observed 2026-10-18: a Worker reported that it had not written a file, wrote it 80 s later and reported
+    again; only the first result was recorded). The first result ends the request, so the session and every process it
+    started stop before anything can act unrecorded."""
+    try:
+        process.wait(timeout=RESULT_EXIT_GRACE_SECONDS)
+        return False
+    except subprocess.TimeoutExpired:
+        pass
+    stray = descendants(process.pid)
+    trace.record(state, "provider.process.stopped_after_result", phase=phase, descendants=len(stray))
+    process.terminate()
+    for pid in stray:
+        with contextlib.suppress(OSError):
+            os.kill(pid, signal.SIGKILL)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+    return True
 
 
 def finish_planning(state, structured, *, execute_next):
@@ -83,6 +138,7 @@ class GoalTracker:
 
 def main():
     process = None
+    state = {}
     goal = events = None
     try:
         state = safe_read_json(Path(sys.argv[1]))
@@ -93,7 +149,7 @@ def main():
         # The host's Codex thread and Claude Code nesting markers must not describe this child.
         environment = {key: value for key, value in os.environ.items()
                        if key not in ("CODEX_THREAD_ID", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
-        from tasks import orchestrator_guard
+        from hooks import orchestrator_guard
         environment.pop(orchestrator_guard.ENV, None)
         if orchestrator_guard.orchestrating(state, session):
             environment.update(orchestrator_guard.environment(state))
@@ -107,16 +163,24 @@ def main():
             setup = setup_messages(session, state, phase) if goal is None else []
             if setup:
                 goal = GoalTracker(session, state)
+            reference = trace.snapshot(state, "provider.delivery.requested",
+                lambda: {"fixed": Path(command[command.index("--append-system-prompt-file") + 1]).read_text(encoding="utf-8"),
+                 "messages": [*setup, message]}, phase=phase, sessionId=session_id)
+            trace.record(state, "provider.process.launching", phase=phase, command=command,
+                         workingDirectory=session.get("workingDirectory", session["projectRoot"]))
             # No new session/group: parent runtime containment must include all descendants.
             process = subprocess.Popen(command, cwd=session.get("workingDirectory", session["projectRoot"]),
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True,
                                        encoding="utf-8", env=environment)
             for line in (*setup, message):
+                trace.provider_message(state, "send", line, phase=phase)
                 process.stdin.write(json.dumps(line, ensure_ascii=False) + "\n")
             process.stdin.close()
+            trace.record(state, "provider.delivery.written", phase=phase, snapshot=reference)
             events = Events(session_id, terminal=phase != "plan", request_id=message["uuid"],
                             setup_ids=[line["uuid"] for line in setup])
             for line in process.stdout:
+                trace.provider_message(state, "receive", line, phase=phase)
                 translated = events.translate(json.loads(line))
                 # A resumed execution phase re-announces the same thread; the runtime saw it already.
                 if index and translated and translated[0].get("type") == "thread.started":
@@ -125,10 +189,17 @@ def main():
                     goal.observe(events)
                 for event in translated:
                     emit(event)
+                if events.finished:
+                    break
+            stopped = events.finished and stop_after_result(state, process, phase)
+            # Output written after the result, or before the stop, is kept for the trace; it changes nothing.
+            for line in process.stdout:
+                trace.provider_message(state, "receive", line, phase=phase)
             code = process.wait()
+            trace.record(state, "provider.process.exited", phase=phase, returnCode=code)
             if not events.acknowledged:
                 raise ContractError("start_ack_missing", f"Claude exited with {code} before acknowledging the current request")
-            if code != 0 or not events.finished:
+            if (code != 0 and not stopped) or not events.finished:
                 raise ContractError("native_backend_error" if code else "result_missing",
                                     f"Claude exited with {code}; terminal result received: {events.finished}")
             if setup:
@@ -139,6 +210,7 @@ def main():
                 return 0
         return 0
     except (OSError, ValueError, KeyError, ContractError) as error:
+        trace.exception(state, "provider.adapter.failed", error)
         if goal is not None:
             with contextlib.suppress(Exception):
                 goal.finish(events, succeeded=False)

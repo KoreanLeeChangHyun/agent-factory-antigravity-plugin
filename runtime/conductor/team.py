@@ -311,7 +311,7 @@ def tasks_for(observation, agent):
 
 
 def _read_domains(runtime, root):
-    from tasks import domains
+    from conductor import domains
     try:
         binding = runtime.runtime_paths.resolve(root)
         return domains.read(Path(binding["runtimeRoot"])), None
@@ -330,7 +330,7 @@ def worker_view(observation, held, domains, agent, task_list=None):
         counts[item["state"]] = counts.get(item["state"], 0) + 1
     latest = max(entry["runs"], key=lambda run: (run.get("acceptedAt") or "", run.get("runId") or ""), default=None)
     return {"agentId": agent, **_profile(entry), "domain": domain, "removed": removed,
-            "availability": availability(worker_holds), "holds": copy.deepcopy(worker_holds),
+            "availability": "queued" if latest and latest.get("status") in {"accepted", "queued"} and latest.get("domainAdmission", {}).get("status") == "waiting" else availability(worker_holds), "holds": copy.deepcopy(worker_holds),
             "attention": [hold for hold in worker_holds if hold["kind"] == "failed"],
             "currentTasks": [_task_summary(item) for item in task_list if item["state"] in {"current", "waiting-human"}],
             "queuedTasks": [_task_summary(item) for item in task_list if item["state"] == "queued"],
@@ -474,6 +474,11 @@ def check_start(runtime, root, workflow_id, tasks, requirements, verification_ag
     observation = observe(runtime, root)
     held = holds(observation)
     workers, earlier = [], set()
+    from conductor import session_pool, domains as domain_store
+    document, domain_error = _read_domains(runtime, root)
+    if domain_error:
+        raise ContractError(domain_error["code"], domain_error["message"])
+    pool_entries = session_pool.observe(Path(runtime.runtime_paths.resolve(root)["runtimeRoot"]), document)
     named = []
     for task in tasks:
         for role in WORKER_ROLES:
@@ -496,6 +501,15 @@ def check_start(runtime, root, workflow_id, tasks, requirements, verification_ag
         strategy = (allocation.get("session") or {}).get("strategy")
         entry = observation["workers"].get(agent) or {"session": None, "runs": [], "problems": []}
         exists = entry["session"] is not None
+        domain = domain_store.find(document, allocation["domain"]) if allocation.get("domain") else next(
+            (d for d in document["domains"] if d["id"] == document["assignments"].get(agent, {}).get("domainId")), None)
+        if not exists and domain:
+            members = session_pool.operating(document, domain, pool_entries)
+            reusable = [candidate for candidate in members if availability(held.get(candidate, [])) == "idle"
+                        and not compare(_profile(observation["workers"][candidate]), {**requirements, "role": "work"})]
+            if len(members) >= session_pool.limit(domain) and reusable:
+                raise ContractError("worker_reuse_required", "This domain's operating pool is full. Reuse an idle compatible performer: "
+                                    + ", ".join(reusable) + ". Reset its conversation first only for unrelated work; history is retained.")
         if agent in earlier:
             continue  # Later tasks of this list continue the session an earlier task opened.
         earlier.add(agent)

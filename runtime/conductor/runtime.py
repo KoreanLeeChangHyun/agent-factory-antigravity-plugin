@@ -18,7 +18,7 @@ from pathlib import Path
 
 from storage import files
 from storage.errors import ContractError
-from tasks.conductor_queue import DELEGATION_TERMINAL, StaleOwner, digest, iso
+from conductor.queue import DELEGATION_TERMINAL, StaleOwner, digest, iso
 
 HANGUL = re.compile("[가-힣]")
 
@@ -59,12 +59,12 @@ class FakeConductor:
                 children = context.get("children", {}).get(request_id, [])
                 if children and all(ch["status"] in ("completed", "cancelled") for ch in children):
                     commands.append({"type": "reply", "requestId": request_id, "final": True,
-                                     "text": say("분리된 작업 결과를 종합했습니다.", "Separated intents have finished.")})
+                                     "text": say("분리된 수행 결과를 종합했습니다.", "Separated intents have finished.")})
                 continue
             if request["status"] in ("cancelled", "cancelling"):
                 if any(i["kind"] == "request-cancelled" for i in items):
                     commands.append({"type": "reply", "requestId": request_id,
-                                     "text": say("요청 취소를 확인했습니다. 이미 끝난 작업 결과는 그대로 보존됩니다.",
+                                     "text": say("요청 취소를 확인했습니다. 이미 끝난 수행 결과는 그대로 보존됩니다.",
                                                  "Cancellation acknowledged. Work that already finished keeps its result.")})
                 continue
             for item in [i for i in items if i['kind'] == 'required-task']:
@@ -112,7 +112,8 @@ class FakeConductor:
                                      "spec": {"goal": item["payload"]["text"], "part": index + 1, "of": plan["tasks"],
                                               "durationMs": plan["durationMs"], "failOnce": plan["failOnce"] and index == 0,
                                               "workerQuestion": "ask-worker" in item["payload"]["text"], "progressBurst": plan["progressBurst"], "writeScope": [], "workspace": {"mode": "read-only"}}})
-            results = [i for i in items if i["kind"] in ("delegation-result", "worker-question")]
+            # Late and conflicting results settle the plan but are never summarized as current results.
+            results = [i for i in items if i["kind"] in ("delegation-result", "worker-question", "late-result", "result-conflict")]
             if results and not any(i["kind"] == "user-message" for i in items):
                 states = {d["id"]: d for d in delegations}
                 for item in results:
@@ -120,13 +121,15 @@ class FakeConductor:
                     states[d.get("id")] = {**states.get(d.get("id"), {}), **d}
                 done = [d for d in states.values() if d.get("status") in DELEGATION_TERMINAL]
                 if len(done) == len(states):
-                    lines = ["- %s: %s" % (d["title"], d["status"]) for d in sorted(states.values(), key=lambda d: d["title"])]
+                    lines = ["- %s: %s" % (d["title"], d["status"] if (d.get("admission") or {}).get("current", True)
+                                           else say("반영하지 않음(%s)", "not applied (%s)") % d["admission"]["reason"])
+                             for d in sorted(states.values(), key=lambda d: d["title"])]
                     commands.append({"type": "reply", "requestId": request_id, "final": True,
                                      "text": say("모든 작업이 끝났습니다. 결과를 종합합니다.\n", "All tasks finished. Summary:\n")
                                      + "\n".join(lines)})
                 else:
                     commands.append({"type": "reply", "requestId": request_id,
-                                     "text": say("작업 결과를 받았습니다 (%d/%d 완료)." % (len(done), len(states)),
+                                     "text": say("수행 결과를 받았습니다 (%d/%d 완료)." % (len(done), len(states)),
                                                  "Received a result (%d/%d done)." % (len(done), len(states)))})
         return commands, self.usage(context)
 
@@ -173,7 +176,11 @@ Return ONLY one JSON object (no prose) of the form
   {"type": "register-required", "requestId": ID, "tasks": [{"key": KEY, "title": TEXT, "spec": SPEC, "prerequisites": [KEY]}]}
   {"type": "ack-instruction", "requestId": ID, "instructionId": ID, "taskIds": [REQUIRED_TASK_ID], "evidence": TEXT}
 Use only requestIds from "requests". A final reply is allowed only when that request has no open
-delegation. Answer in the user's language. "checkpoint", when present, is your predecessor's confirmed
+delegation. Integrate only "delegation-result" items whose delegation admission is current. A "late-result"
+(cancelled, superseded or earlier-revision assignment) stays on record but never changes the current answer.
+A "result-conflict" means one result key arrived with different content: do not pick one silently; re-judge,
+re-delegate or ask. A user-message with "revision" replaces the request's direction from that revision on;
+earlier revisions and the original text stay as history, and a new message without it is never a cancellation. Answer in the user's language. "checkpoint", when present, is your predecessor's confirmed
 decisions, pending inputs, open delegations and processing position; continue from it."""
 
 
@@ -205,7 +212,7 @@ class ManagedConductor:
     """
 
     def __init__(self, project_root, store, *, poll_seconds=1.0, backend=None):
-        from tasks.conductor_backend import ManagedBackend
+        from conductor.backend import ManagedBackend
         self.store, self.poll = store, poll_seconds
         self.project_root = Path(project_root)
         store.project_root = self.project_root
@@ -332,7 +339,7 @@ class ManagedExecutor:
     """
 
     def __init__(self, store, project_root, *, poll_seconds=2.0, backend=None):
-        from tasks.conductor_backend import ManagedBackend
+        from conductor.backend import ManagedBackend
         self.store, self.poll = store, poll_seconds
         self.project_root = Path(project_root)
         store.project_root = self.project_root
@@ -344,15 +351,26 @@ class ManagedExecutor:
     def request(self, ctx):
         policy = ctx["policy"]
         worker = ctx.get('worker')
-        agent = worker['id'] if worker else 'work-cq-' + ctx['attemptId'][4:]
-        settings = ctx['spec'].get('executionSettings') or policy['work']
+        resolver = ctx.get('resolver') if ctx.get('tier') == 'resolver' else None
+        agent = resolver['agentId'] if resolver else worker['id'] if worker else 'work-cq-' + ctx['attemptId'][4:]
+        # A resolver attempt runs the Human-selected resolver settings in its own session of the same performer;
+        # scope, permissions and the task binding stay those of the original task.
+        settings = resolver['settings'] if resolver else ctx['spec'].get('executionSettings') or policy['work']
         settings = {k: v for k, v in settings.items() if k not in ('sandbox', 'approvalPolicy') and not (k == 'workProfile' and v == 'work')}
-        verification = {'agentId': ctx['verifier'], 'area': json.loads(worker['area']), 'settings': ctx['spec']['verificationSettings']} if ctx.get('verifier') else None
+        area = json.loads(worker['area']) if worker else ctx.get('area')
+        verification = {'agentId': ctx['verifier'], 'area': area, 'settings': ctx['spec']['verificationSettings']} if ctx.get('verifier') else None
+        handoff = ({'kind': 'resolver-handoff', 'handoffId': resolver['handoffId'], 'bundle': resolver['bundle'],
+                    'performer': ctx.get('performerContext'), 'binding': ctx.get('binding')} if resolver else
+                   {'kind': 'performer-context', 'performer': ctx.get('performerContext'), 'binding': ctx.get('binding')}
+                   if ctx.get('binding') else None)
+        goal = ctx["spec"].get("goal") or ctx["title"]
+        text = goal if not resolver else (
+            "Resolver handoff for the same task. Continue it within the unchanged scope and permissions, using the "
+            "previous attempts, failure evidence, pinned skills, memory snapshot and open items recorded in the handoff.\n\n" + goal)
         return {"verification": verification, "run": {"dispatchId": "cq-" + ctx["attemptId"]},
                 "session": {"agentId": agent, "managedCreated": (Path(self.store.path).parent / "agents" / agent / "session.json").exists(), "role": "work",
-                            "area": json.loads(worker["area"]) if worker else None,
-                            "settings": settings, "handoff": None},
-                "message": {"kind": "task", "text": ctx["spec"].get("goal") or ctx["title"]},
+                            "area": area, "settings": settings, "handoff": handoff},
+                "message": {"kind": "task", "text": text},
                 "task": {"id": ctx["delegationId"], "spec": {
                     "goal": ctx["spec"].get("goal") or ctx["title"], "inputs": ctx["spec"].get("inputs", []),
                     "completionCriteria": ctx["spec"].get("completionCriteria") or ctx["title"],
@@ -476,6 +494,8 @@ class ManagedExecutor:
                     time.sleep(self.poll)
                     continue
                 self.store.record_observation(ctx["attemptId"], 'heartbeat-timeout' if health.get('heartbeatStale') and status not in mapping else None)
+                if not health.get('heartbeatStale'):
+                    self.store.performers.heartbeat(ctx['attemptId'])  # A live managed run renews the attempt lease.
                 if health.get("zombie"):
                     ingest("failed", error={"code": "worker-zombie", "retryable": False,
                                             "message": "Managed process containment is confirmed empty"})
@@ -581,6 +601,7 @@ class Runtime:
 
     def tick(self):
         handled = self.store.publish_pending()
+        handled += self.store.performers.expire_leases()
         handled += self.store.route_batch()
         handled += self.store.schedule_instances()
         with self.store.tx() as c:
@@ -589,6 +610,7 @@ class Runtime:
         handled += self.store.consume("conductor", self.store.conductor_handler)
         handled += self.store.consume("executor", self.store.executor_handler(self.dispatching()))
         handled += self.store.consume("ui", self.store.ui_handler)
+        handled += self.store.consume("memory", self.store.performers.memory_handler)
         handled += self.start_effects()
         handled += self.start_turns()
         return handled
@@ -725,7 +747,7 @@ def serve(store, runtime, lock_path, *, source=sys.stdin, sink=sys.stdout, stop=
             elif op == 'enroll-worker':
                 result = store.pool.enroll_worker(message['chatId'], message['agentId'], message['area'], message['reference'])
             elif op == 'subdomain':
-                from tasks import domains
+                from conductor import domains
                 value = message['declaration']
                 result = domains.subdomain(store.path.parent, value['domainId'], value['name'], value['actor'], value['source'],
                                            value.get('expectedRevision'), value.get('writeScope'))

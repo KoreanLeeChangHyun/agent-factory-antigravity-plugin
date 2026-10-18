@@ -8,7 +8,7 @@ import math
 
 from storage.errors import ContractError
 from storage.files import safe_read_json
-from tasks import domains
+from conductor import domains
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS pool_members(id TEXT PRIMARY KEY, role TEXT NOT NULL, area TEXT NOT NULL,
@@ -23,7 +23,10 @@ CREATE TABLE IF NOT EXISTS questions(id TEXT PRIMARY KEY, request_id TEXT, input
   conductor_id TEXT, slot TEXT, epoch INTEGER, kind TEXT NOT NULL, state TEXT NOT NULL, text TEXT, source TEXT NOT NULL);
 '''
 DEFAULT = {'worker': {'domainLimit': 2, 'subdomainLimit': 1, 'reuse': 'oldest-idle', 'idleRetentionSeconds': None},
-           'conductor': {'domainLimit': 2, 'subdomainLimit': 1, 'reuse': 'oldest-idle', 'idleRetentionSeconds': None},
+           # Conductor limits bound concurrent conductor turns (sessions thinking at once), not open requests: an instance
+           # waiting for workers holds no slot, so an independent conversation is answered by another session meanwhile
+           # (Human request 2026-10-13). Explicitly configured limits are kept.
+           'conductor': {'domainLimit': 2, 'subdomainLimit': 2, 'reuse': 'oldest-idle', 'idleRetentionSeconds': None},
            'domains': {}, 'subdomains': {}}
 
 
@@ -32,7 +35,7 @@ def enabled(policy):
 
 
 def signature(policy, role, spec=None):
-    from tasks.conductor_queue import digest
+    from conductor.queue import digest
     settings = ((spec or {}).get('executionSettings') if role == 'worker' else None) or policy.get('work' if role == 'worker' else 'conductorSettings') or {}
     settings = {k: v for k, v in settings.items() if k not in ('sandbox', 'approvalPolicy') and not (k == 'workProfile' and v == 'work')}
     sandbox = policy.get('sandbox') if role == 'worker' else policy.get('conductorSandbox', 'read-only')
@@ -136,9 +139,18 @@ class Pool:
         return {**config.get(role, config['worker']), **config.get('domains', {}).get(area['domainId'], {}).get(role, {}),
                 **{k: v for k, v in config.get('subdomains', {}).get(area['subdomainId'], {}).get(role, {}).items() if k != 'domainLimit'}}
 
-    def room(self, c, role, area):
+    def room(self, c, role, area, *, excluding=None):
         rule = self.rule(c, role, area)
         members = []
+        if role == 'conductor':
+            # Only instances running a turn occupy a slot; an instance merely owning open requests does not.
+            for row in c.execute("SELECT p.area FROM pool_members p JOIN conductors k ON k.id=p.id WHERE p.role='conductor' AND k.status='busy' AND p.id IS NOT ?", (excluding,)):
+                members.append(json.loads(row['area']))
+            if sum(a['domainId'] == area['domainId'] for a in members) >= rule['domainLimit']:
+                return 'conductor-turns:domain'
+            if sum(a['subdomainId'] == area['subdomainId'] for a in members) >= rule['subdomainLimit']:
+                return 'conductor-turns:subdomain'
+            return None
         for row in c.execute("SELECT * FROM pool_members WHERE role=?", (role,)):
             agents = [row['id']] if role != 'conductor' else ['cq-' + row['id'].split('-', 1)[1] + '-' + slot for slot in ('a', 'b')]
             if row['state'] == 'busy' or any(session_busy(self.store.path.parent, agent) for agent in agents):
@@ -188,7 +200,7 @@ class Pool:
         return count
 
     def reserve_worker(self, c, delegation, signature):
-        from tasks.conductor_queue import ident
+        from conductor.queue import ident
         assigned = c.execute('SELECT worker_id FROM attempt_workers WHERE attempt_id=?', (delegation['attempt_id'],)).fetchone()
         if assigned:
             return assigned[0], None
@@ -234,7 +246,7 @@ class Pool:
                 for r in c.execute('SELECT * FROM fixed_decisions WHERE request_id=? ORDER BY created_at,id', (request_id,))]
 
     def decide(self, c, request_id, kind, value, source, actor, key):
-        from tasks.conductor_queue import digest
+        from conductor.queue import digest
         ident = 'decision-' + digest([request_id, key])[:24]
         previous = c.execute('SELECT * FROM fixed_decisions WHERE id=?', (ident,)).fetchone()
         if previous and (json.loads(previous['value']) != value or previous['source'] != source):

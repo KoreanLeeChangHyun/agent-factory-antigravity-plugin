@@ -24,6 +24,8 @@
 
 ## 2. Permissions
 
+### 2.1. Inheritance and capture sources
+
 - **Inheritance:** children inherit the parent's filesystem, network and approval
   policy; no separate child sandbox default. Persist the resolved policy in session, run
   and dispatch identity. Historical run and dispatch policies remain immutable.
@@ -41,6 +43,9 @@
   a project directory.
 - **Explicit inputs:** `--execution-policy-file`, or `--sandbox` with `--approval-policy`, `--[no-]network-access` and
   repeated `--writable-root`. Explicit child inputs must match the parent's resolved policy.
+
+### 2.2. Run output and approval
+
 - **Run output:** derive exact managed-run write access from the persisted policy; a
   read-only code root stays read-only. Preserve inherited network access.
 - **Background approval:** forward the selected approval policy; interactive approval
@@ -52,6 +57,9 @@
   - Conversation remains Main's direct responsibility under either policy and starts no
     child graph.
   - Omitted sends preserve the session policy.
+
+### 2.3. Platform enforcement and references
+
 - **Linux:** split permissions require bubblewrap; legacy Landlock cannot represent
   them. Denied user-namespace setup fails closed; never substitute a wider policy.
 - **References:** [sandbox backend](https://github.com/openai/codex/blob/main/codex-rs/linux-sandbox/README.md), [configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
@@ -59,6 +67,8 @@
 <a id="host-readiness-and-diagnostics"></a>
 
 ## 3. Host readiness and diagnostics
+
+### 3.1. Doctor inventory and probes
 
 - Run `python3 <plugin-root>/scripts/exec.py doctor` when first choosing a managed host,
   when that host changes, or when diagnosing a relevant failure. Reuse the observation
@@ -69,12 +79,7 @@
 - `--codex PATH` selects the executable to locate; this inventory does not prove its
   version or complete sandbox works.
 
-| Host | Managed execution | Required action |
-| --- | --- | --- |
-| Linux, including Ubuntu | Requires `/proc` identity and usable containment/sandbox facilities | Inspect `doctor`; use `--probe` for system bubblewrap evidence. |
-| macOS | Requires kernel boot/process identity and private process groups | Use Python 3.10+ and inspect `doctor`; validate the selected native Codex sandbox on the actual Mac. |
-| Native Windows (for example Git Bash) | Requires native Python 3.10+ (not MSYS2/Cygwin), kernel process identity and Job Objects | Inspect `doctor`; call `python` or `py -3` where `python3` is absent; validate the selected native Codex sandbox on the actual host. |
-| Other operating systems | Unsupported | Use a supported host. |
+### 3.2. Platform support
 
 - macOS `doctor --probe` reports the Linux bubblewrap probe as `not-applicable`; it reads native
   identity availability and leaves sandbox readiness unknown.
@@ -91,6 +96,9 @@
 - Native API references: [process info](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/proc_info.h), [boot session UUID](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sysctl.c).
 - Unsupported hosts return `managed_platform_unsupported`; use a supported host without
   broadening permissions.
+
+### 3.3. Selected executable preflight
+
 - `sandboxReadiness: unknown` is intentional: locating a binary, an enabled AppArmor setting, or a
   successful system helper probe is not a Codex sandbox pass. Codex may use a bundled
   helper, so missing system bubblewrap is not conclusive.
@@ -111,6 +119,15 @@
   passed), `1` means a required inspected prerequisite is absent or the probe
   failed/could not run, and `2` means the managed platform is unsupported. None
   certifies successful managed execution on the selected host.
+
+### 3.4. Inventory fields
+
+| Host | Managed execution | Required action |
+| --- | --- | --- |
+| Linux, including Ubuntu | Requires `/proc` identity and usable containment/sandbox facilities | Inspect `doctor`; use `--probe` for system bubblewrap evidence. |
+| macOS | Requires kernel boot/process identity and private process groups | Use Python 3.10+ and inspect `doctor`; validate the selected native Codex sandbox on the actual Mac. |
+| Native Windows (for example Git Bash) | Requires native Python 3.10+ (not MSYS2/Cygwin), kernel process identity and Job Objects | Inspect `doctor`; call `python` or `py -3` where `python3` is absent; validate the selected native Codex sandbox on the actual host. |
+| Other operating systems | Unsupported | Use a supported host. |
 
 <a id="relocation"></a>
 

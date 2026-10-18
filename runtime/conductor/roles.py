@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 from storage.errors import ContractError
-from tasks import conductor_pool, domains
+from conductor import domains, pool
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS area_role_settings(area_id TEXT NOT NULL, role TEXT NOT NULL, settings TEXT NOT NULL,
@@ -31,7 +31,7 @@ class Roles:
             return []
         if self.native_cache is None or self.store.clock() - self.native_cache[0] >= 30:
             import exec as runtime
-            from tasks import team
+            from conductor import team
             roster = team.roster(runtime, root)
             for worker in roster['workers']:
                 if worker.get('role') == 'work' and not worker.get('workProfile'):
@@ -58,7 +58,7 @@ class Roles:
             child = placements.get('subdomainAssignments', {}).get(agent) or {}
             if (worker.get('domain') or {}).get('domainId') != area['domainId'] or child.get('subdomainId') != area['subdomainId']:
                 continue
-            if self.store.row(c, 'SELECT id FROM pool_members WHERE id=?', agent) or conductor_pool.session_busy(self.store.path.parent, agent):
+            if self.store.row(c, 'SELECT id FROM pool_members WHERE id=?', agent) or pool.session_busy(self.store.path.parent, agent):
                 continue
             session = safe_read_json(self.store.path.parent / 'agents' / agent / 'session.json')
             if any(session.get(key) != settings.get(key) for key in ('model','provider','reasoningEffort','fast')):
@@ -85,7 +85,8 @@ class Roles:
                 raise ContractError('route_invalid', 'Select work or work-verification for new requests')
             c.execute('INSERT OR REPLACE INTO area_processing VALUES(?,?,?)', (area_id, route, reference))
         if profile is not None:
-            if profile not in (*PROFILES, 'explore', 'scribe') or not isinstance(settings, dict) or not settings.get('model') or settings.get('provider') not in ('codex', 'claude', 'antigravity'):
+            # resolver is a separately selected tier above Expert; it is configured, never hired into a pool.
+            if profile not in (*PROFILES, 'explore', 'scribe', 'resolver') or not isinstance(settings, dict) or not settings.get('model') or settings.get('provider') not in ('codex', 'claude', 'antigravity'):
                 raise ContractError('role_setting_invalid', 'Use an explicit existing role model/provider setting')
             if settings.get('sandbox') not in ('read-only', 'workspace-write', 'danger-full-access') or settings.get('approvalPolicy') not in ('bypass', 'required'):
                 raise ContractError('role_setting_invalid', 'Capture the role permissions without substituting a model')
@@ -155,10 +156,10 @@ class Roles:
         return 'worker' if profile == 'work' else profile
 
     def signature(self, settings, profile):
-        return conductor_pool.signature({'work': {**settings, 'workProfile': profile}, 'sandbox': settings['sandbox'], 'approvalPolicy': settings['approvalPolicy']}, 'worker')
+        return pool.signature({'work': {**settings, 'workProfile': profile}, 'sandbox': settings['sandbox'], 'approvalPolicy': settings['approvalPolicy']}, 'worker')
 
     def hire(self, c, area_value, profile, settings, reference, *, actor="human"):
-        from tasks.conductor_queue import ident
+        from conductor.queue import ident
         area = self.store.pool.area(area_value)
         if profile not in PROFILES:
             raise ContractError('role_profile_invalid', 'Select Worker, Expert or Verifier')
@@ -220,7 +221,7 @@ class Roles:
                         availability = 'running'
                     elif is_verifier:
                         availability = 'waiting-result'
-            elif availability == 'idle' and conductor_pool.session_busy(self.store.path.parent, row['id']):
+            elif availability == 'idle' and pool.session_busy(self.store.path.parent, row['id']):
                 availability = 'occupied-externally'
             members.append({'poolState': row['state'], 'id': row['id'], 'profile': settings['profile'] if settings else ('work' if row['role']=='worker' else row['role']),
                             'area': json.loads(row['area']), 'state': availability, 'taskIds': tasks,

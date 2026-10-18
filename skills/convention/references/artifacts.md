@@ -2,65 +2,58 @@
 
 ## 1. Storage and delivery
 
-- **Mandatory:** never create a directory the Human has not agreed to, anywhere in the
-  project, including temporary, scratch, output, backup, test or tool directories. Use
-  existing directories, paths the task explicitly names, `docs/artifact/`, or the standard
-  Document locations (`docs/progress/`, `docs/lessons-learned/` and the like).
-- `docs/artifact/` is the agreed home for generated outputs; use it by default and actively.
-- Use `<project-root>/docs/artifact/` for AI-created files outside Document packages:
-  HTML previews or interactive explanations, SVG illustrations, screenshots,
-  generated images and other task deliverables. Create it when an output is needed.
-- `docs/artifact/` is a directory, not a Document type or an active Skill. Files need no
-  `SKILL.md`, YAML metadata, document category or mandatory package structure.
-- Store each bundle at `docs/artifact/<category>/<task-or-topic>/`, using the purpose
-  categories below. Releases use `docs/artifact/release/<version>/`.
-- Classify the bundle by its primary purpose, not each file's extension. Keep HTML,
-  CSS, scripts, images and supporting files together with working relative links.
-  Preserve existing outputs unless replacement is in scope.
-- Follow the Human's explicit output location when supplied. Keep application source
-  in its owning source tree and canonical Documents in their Document locations.
-  Assets owned by a Document remain in that Document's `assets/` directory.
-- Keep runtime state, logs and disposable execution scratch files in the producing
-  run's storage. Use `docs/artifact/` for outputs intended to be inspected or reused.
-- Never create ad-hoc temporary or scratch directories or files in the project root or
-  alongside source; use the run's storage or the system temp directory and clean it up.
-- Artifact files are not automatically cataloged as Documents, synchronized to
-  `.codex/skills/`, `.claude/skills/`, `.agents/skills/`, published or committed. Preserve the task's existing permissions.
-- Verify the output using checks appropriate to its format and provide a clickable
-  file link in the result. Distinguish a saved file from a rendered or visually checked
-  result; do not claim browser or image inspection unless it occurred.
+- **Never create an unapproved project directory**, including scratch, output, backup,
+  test or tool directories. Standalone deliverables use `docs/artifact/`; canonical
+  Documents follow the [Document layout](../../document/references/layout.md).
+- The artifact root has exactly nine domain directories from the table below and no
+  nested directories. The only root control file is `index.json`. No `SKILL.md`
+  wrapper, Document metadata or Skill synchronization is required.
+- Write `docs/artifact/<domain>/<filename>`. Put topic, date and release version in
+  filenames, for example `release/product__1.2.3.zip`; never create task, date, version
+  or format subdirectories. A new domain needs explicit Human agreement.
+- For a multi-file deliverable, stage in run storage or system temp and deliver a ZIP
+  or TAR in its domain. Keep original relative paths inside the archive. Extract for
+  use in run storage or system temp, never into the artifact tree. A standalone HTML
+  file can be delivered directly when its dependencies are embedded.
+- Honor a Human-named output location without silently changing the fixed layout.
+  Preserve existing outputs and use a unique filename instead of overwriting them.
+- Keep application source in its owning source tree, Document-owned assets in their
+  package's `assets/`, and live runtime homes, locks, caches and disposable raw logs
+  in run storage or system temp. Remove disposable scratch after successful delivery.
+- Artifacts are not automatically committed, published or synchronized to host Skills.
+  Preserve the task's authority. Verify the format and provide a clickable file link;
+  distinguish saved output from rendered or visually inspected output.
 
-## 2. Purpose and ownership
+## 2. Domain selection
 
-| Category | Purpose | Examples |
-|---|---|---|
-| `preview` | Inspect an idea, layout or interaction before or alongside implementation. | HTML demos, interactive explanations, mockups and their supporting files. |
-| `evidence` | Preserve inspectable evidence of an implementation, test or experiment. | Screenshots, measurements, selected check logs and reproducible sample inputs. |
-| `media` | Reuse a produced visual asset. | Icons, illustrations, generated images and exported variants. |
-| `release` | Deliver or reproduce a particular released version. | Packages, checksums and intentionally retained distribution snapshots. |
+First exclude canonical Documents, live source and runtime storage. An explicit
+release bundle belongs in `release`; a version number alone does not make a release.
+Selected observation/check material belongs in `evidence`. Otherwise classify by the
+principal delivered representation, keeping mixed-format bundles intact. Classification
+implies no approval, correctness, publication or Verification pass.
 
-- Keep mixed-format bundles intact. A demo screenshot can remain with its preview;
-  a screenshot used as test evidence belongs with that evidence. Classification
-  does not imply approval, correctness, publication or a Verification pass.
-- Durable analysis, research and historical reports are canonical Documents; route
-  them through the [Document layout](../../document/references/layout.md). Their
-  owned attachments belong in the Document's `assets/`. An exported report can remain
-  an artifact only as a derived delivery, not a competing editable original.
-- Keep active runtime homes, locks, caches, dependency installations and disposable
-  raw logs in run storage or system temporary storage. Retain selected evidence in
-  `evidence`; a completed experiment does not make its entire runtime a deliverable.
-- Historical bundles may contain source snapshots. Preserve their provenance and
-  bytes; do not treat them as the application's editable source or execute them
-  merely to classify them.
+| Domain | Delivered content |
+|---|---|
+| `output` | Exported reports, PDFs, slides and posters; editable canonical Documents stay with their owner. |
+| `media` | Images, icons, illustrations, fonts, audio, video and animation assets. |
+| `data` | Reusable datasets, spreadsheets, database and GIS exports. |
+| `model` | CAD, 3D, simulation and machine-learning models or weights. |
+| `software` | Standalone tools, scripts, notebooks, workflows and configuration bundles; not live application source. |
+| `interactive` | HTML explanations, dashboards, prototypes, demos and games. |
+| `evidence` | Selected screenshots, measurements, test logs and observation records. |
+| `release` | Versioned release packages, installers, checksums, signatures and retained distribution snapshots. |
+| `other` | A real deliverable outside the above domains; record its type and classification reason in the index. |
 
-## 3. Authorized reorganization
+## 3. Reorganization and checks
 
-- Inventory destinations and incoming references before moving existing bundles.
-  Back up originals, check collisions and concurrent writes, preserve file content,
-  and remove old paths only after checking the copied outputs.
-- Update live generators, test output defaults, demos and links together. Preserve
-  historical quoted paths as evidence; rewrite actual navigational links when needed.
-- Do not follow symlinks into dependencies or runtime data while migrating. Preserve
-  the link itself separately when it is execution scaffolding rather than a deliverable.
-- Do not delete identical files merely because their hashes match. Separate release
-  versions and historical observations can legitimately contain identical assets.
+- Inventory existing files and incoming links before moving them. Preserve provenance,
+  bytes and archive member paths; verify every file's size and SHA-256 before removing
+  its old path. Retain originals in run storage, check collisions and concurrent writes.
+- Record old-path → archive/member mappings and hashes in `index.json`. Retain historical
+  quoted paths as evidence; update live navigation and generators. If a linked image
+  needs direct viewing, retain a byte-identical flat export with its source relation.
+- Do not deduplicate historical observations or release versions by matching hashes.
+  Do not execute archived code to classify it, or follow symlinks into runtime/dependencies.
+- Producers must validate the fixed domain and flat destination before writing. Repository
+  checks must reject additional/nested directories and symlinks, including empty ones.
+  These checks detect drift; they are not an operating-system ban on arbitrary writes.

@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
 from tasks.commits import bound_main, execute  # noqa: E402
-from tasks.orchestrator_guard import ENV, has_symlink, inside  # noqa: E402
+from hooks.orchestrator_guard import ENV, has_symlink, inside  # noqa: E402
 from storage.errors import ContractError  # noqa: E402
 from storage.files import safe_read_json  # noqa: E402
 

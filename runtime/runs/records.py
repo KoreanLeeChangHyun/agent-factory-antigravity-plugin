@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from typing import Iterator
 
+from runs import trace
+
 
 def create_run(
     runtime,
@@ -99,6 +101,9 @@ def create_run(
         "statePath": str(directory / "state.json"),
         "resultPath": str(result_path),
         "eventsPath": str(events_path),
+        "tracePath": str(directory / "trace.jsonl"),
+        "traceErrorPath": str(directory / "trace-error.json"),
+        "providerEventsPath": str(directory / "provider.jsonl"),
         "heartbeatPath": str(heartbeat_path),
         "responseSchemaPath": str(response_schema),
         "acceptedAt": accepted_at,
@@ -209,6 +214,21 @@ def create_run(
         reference_path = runtime.run_directory(project_root, parent_agent_id, parent_run_id) / "children" / f"{agent_id}.json"
         runtime.atomic_write_json(reference_path, {"agentId": agent_id, "runId": run_id,
             "parentAgentId": parent_agent_id, "parentRunId": parent_run_id, "role": role})
+        trace.record({"statePath": str(reference_path.parent.parent / "state.json"),
+                      "agentId": parent_agent_id, "runId": parent_run_id}, "child.accepted",
+                     childAgentId=agent_id, childRunId=run_id, childRole=role,
+                     childTracePath=state["tracePath"], taskBinding=task_binding)
+    trace.record(state, "run.accepted", request=trace.artifact(request_path),
+                 taskBinding=task_binding, dispatchId=dispatch_id,
+                 conversationId=state.get("conversationId"),
+                 taskMode=state["taskMode"], workProfile=work_profile,
+                 humanApprovalPolicy=state["humanApprovalPolicy"],
+                 executionPolicy=state.get("executionPolicy"),
+                 responseContract=state.get("responseContract", 1),
+                 verifiedWorkRunId=verified_work_run_id)
+    trace.checkpoint(state, "run.configuration", session={key: session[key] for key in (
+        "provider", "providerVersion", "model", "reasoningEffort", "fast", "goalMode", "backend",
+        "nativeCapabilities", "sessionId", "maxAttempts") if key in session})
     return state
 
 

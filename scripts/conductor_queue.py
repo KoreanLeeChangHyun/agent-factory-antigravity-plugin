@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
 from execution.cli import JsonArgumentParser, add_project_argument
 from storage.errors import ContractError
 from storage.files import emit, error_document
-from tasks import conductor_queue, conductor_runtime
+from conductor import queue as conductor_queue, runtime as conductor_runtime
 
 DEFAULT_POLICY = {"approvalPolicy": "bypass", "reference": "development harness", "executor": "fake", "conductor": "fake"}
 
@@ -24,6 +24,9 @@ def build_parser():
                        ("register-required", "Atomically register an authorized required-task manifest"),
                        ("resume-required", "Reconcile durable required tasks without launching a provider"),
                        ("role-pools", "Query canonical area role counts and exact task verification bindings"),
+                       ("performers", "Query each domain's one logical performer, employment, current task, sessions and resolver state"),
+                       ("memory-search", "Search memory within a reader's ownership scope; results point to their sources"),
+                       ("memory-reindex", "Rebuild the memory search index from the recorded entries"),
                        ("configure-role", "Capture an existing role model and permission setting for an area"),
                        ("processing-policy", "Set the processing policy inherited only by newly accepted requests"),
                        ("hire-role", "Hire or reuse an attributed role with captured settings; native session starts on assignment"),
@@ -48,6 +51,9 @@ def build_parser():
             p.add_argument("--chat-id")
         if name in {"pool-config", "subdomain", "enroll-worker", "configure-role", "processing-policy", "hire-role", "register-required"}:
             p.add_argument("--input-json", required=True, help="Structured captured configuration or child-area declaration")
+        if name == "memory-search":
+            p.add_argument("--reader-json", required=True, help='Reader scope, e.g. {"kind":"performer","performerId":"...","domainId":"..."}')
+            p.add_argument("--query", required=True)
         if name in {"responsibility", "register-required"}:
             p.add_argument("--request-id", required=True)
         if name == "init":
@@ -136,6 +142,12 @@ def main(argv=None):
             result = store.responsibility.view(store.connection(), args.request_id)
         elif args.command == 'role-pools':
             result = store.roles.projection(store.connection())
+        elif args.command == 'performers':
+            result = store.performers.projection(store.connection())
+        elif args.command == 'memory-search':
+            result = {'entries': store.performers.search(json.loads(args.reader_json), args.query)}
+        elif args.command == 'memory-reindex':
+            result = {'entries': store.performers.reindex()}
         elif args.command == 'resume-required':
             with store.tx() as c:
                 result = {'reconciled': store.responsibility.reconcile(c)}
@@ -156,7 +168,7 @@ def main(argv=None):
             value = json.loads(args.input_json)
             result = store.pool.configure(value['configuration'], value['reference'])
         elif args.command == 'subdomain':
-            from tasks import domains
+            from conductor import domains
             value = json.loads(args.input_json)
             result = domains.subdomain(store.path.parent, value['domainId'], value['name'], value['actor'], value['source'],
                                        value.get('expectedRevision'), value.get('writeScope'))

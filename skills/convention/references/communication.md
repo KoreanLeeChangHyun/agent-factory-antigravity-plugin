@@ -6,7 +6,7 @@
 
 - Respond in the language the Human uses, or the language they explicitly select for the
   response. Do not fix Human-facing communication to any one language.
-- Follow [Documents](../../document/SKILL.md#document-package) for document language and source fidelity.
+- Follow [Documents](../../document/references/format.md#document-package) for document language and source fidelity.
 
 <a id="required-register"></a>
 
@@ -35,6 +35,11 @@
   Provisional Human decision (2026-10-12, messages
   `24f1bb5c-a1e3-4648-a136-ef6425413a74` and `60536373-90a0-4ed4-b05b-f7f8074179b8`).
 
+- Describe the managed structure as conductor–performer (지휘자–수행자).
+- In Human-facing text, use these names. Call any dispatched Agent Performer (수행자);
+  use Worker (작업자) only for `workLight`, never for Agents in general. Keep literal profile
+  identifiers such as `workLight` unchanged.
+
 | Role | English name | Korean name |
 | --- | --- | --- |
 | Main (orchestrates and dispatches) | Conductor | 지휘자 |
@@ -44,11 +49,6 @@
 | `explore` | Explorer | 탐색자 |
 | `scribe` | Scribe | 기록자 |
 | `verification` | Verifier | 검증자 |
-
-- Describe the managed structure as conductor–performer (지휘자–수행자).
-- In Human-facing text, use these names. Call any dispatched Agent Performer (수행자);
-  use Worker (작업자) only for `workLight`, never for Agents in general. Keep literal profile
-  identifiers such as `workLight` unchanged.
 
 <a id="content-fidelity"></a>
 
@@ -63,3 +63,25 @@
   Agent's surrounding explanation and interaction respectful and formal.
 - Formality must not add flattery, excessive ceremony, vagueness or unnecessary length.
   Remain direct, clear and candid.
+
+<a id="task-messages"></a>
+
+## 5. Requests, commands and reports
+
+For conversation and agent handoffs, include enough context to act without guessing.
+Use these patterns where useful; simple messages need no template.
+
+- State each fact once. Omit empty sections, routine policy, repeated history and copied
+  runtime payloads. Reference exact records for detail without replacing essential context.
+- The conductor sets outcomes and actual boundaries. Leave implementation and check
+  methods to the performer unless required by the Human, accepted contract, project
+  rules or an established dependency. Mark suggestions as optional.
+- Preserve original sources, authority, required structured bindings and meaningful
+  status distinctions. Use valid Markdown when structure helps.
+
+| Message | Necessary content |
+| --- | --- |
+| Request | Outcome, target, essential context, actual constraints and observable completion. |
+| Follow-up | Existing task reference, change and effect on prior instructions; restore context only if unavailable to the recipient. |
+| Command | Action, exact target and necessary arguments. |
+| Report | Result, supporting checks or evidence, and any unresolved blocker or decision. |

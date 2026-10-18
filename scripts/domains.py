@@ -14,7 +14,7 @@ from execution.cli import JsonArgumentParser, add_project_argument  # noqa: E402
 from storage import paths as runtime_paths  # noqa: E402
 from storage.errors import ContractError  # noqa: E402
 from storage.files import emit, error_document  # noqa: E402
-from tasks import domains  # noqa: E402
+from conductor import domains  # noqa: E402
 
 
 def build_parser():
@@ -36,6 +36,9 @@ def build_parser():
     rename = command("rename", "Rename a domain; former names stay linked to recorded tasks")
     rename.add_argument("--domain-id", required=True)
     rename.add_argument("--name", required=True)
+    capacity = command("capacity", "Human only: set the maximum operating sessions; keep active work and all history")
+    capacity.add_argument("--domain-id", required=True)
+    capacity.add_argument("--max-sessions", type=int, required=True)
     assign = command("assign", "Place a worker in a real domain; ai cannot move a worker the Human placed")
     assign.add_argument("--agent", required=True)
     assign.add_argument("--domain-id", required=True)
@@ -71,6 +74,8 @@ def main(argv=None):
             result = domains.create(root, args.name, args.actor, args.source, args.expected_revision)
         elif args.command == "rename":
             result = domains.rename(root, args.domain_id, args.name, args.actor, args.source, args.expected_revision)
+        elif args.command == "capacity":
+            result = domains.set_capacity(root, args.domain_id, args.max_sessions, args.actor, args.source, args.expected_revision)
         elif args.command == "assign":
             result = domains.assign(root, args.agent, args.domain_id, args.actor, args.source, args.expected_revision)
         elif args.command == "remove-worker":
@@ -82,6 +87,8 @@ def main(argv=None):
                 raise ContractError("domain_actor_invalid", "link is Main's dispatch path; the Human uses assign")
             result = domains.link_dispatch(root, args.agent, args.name, args.source)
             result["domains"] = domains.read(root)
+        from conductor.session_pool import public_document
+        result["domains"] = public_document(root, result["domains"])
         emit({"schemaVersion": 1, "kind": "project-domains-result", "command": args.command, **result}, sys.stdout)
         return 0
     except (ContractError, OSError, ValueError) as error:

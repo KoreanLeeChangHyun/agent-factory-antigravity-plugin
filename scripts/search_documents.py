@@ -8,7 +8,9 @@ from pathlib import Path
 import re
 import sys
 
-from catalog_documents import CATALOG_TYPES, TYPE_ALIASES, build_catalog, catalog_entry, check_path, inventory
+from catalog_documents import (CATALOG_TYPES, TYPE_ALIASES, build_catalog, catalog_entry,
+                               check_path, contract_entry, inventory, lesson_entry)
+from storage.errors import ContractError
 
 
 def snapshot(root, entry, observer=None):
@@ -67,7 +69,7 @@ def sections(text):
     return headings
 
 
-def read_document(root, path, anchor=None, revision=None, documents_root=None, observer=None):
+def read_document(root, path, anchor=None, revision=None, documents_root=None, observer=None, *, catalog=None):
     """Read canonical bytes with dependency freshness and complete entry guidance."""
     identity_root = root.resolve(strict=True)
     root = (documents_root or root).resolve(strict=True)
@@ -79,9 +81,23 @@ def read_document(root, path, anchor=None, revision=None, documents_root=None, o
     if len(relative.parts) >= 4 and relative.parts[:2] == ('docs', 'skills'):
         entry = catalog_entry(root, root.joinpath(*relative.parts[:3]), 'specification')
     else:
-        entry = next((item for item in build_catalog(identity_root, root)['documents']
+        entries = catalog if catalog is not None else build_catalog(identity_root, root)['documents']
+        entry = next((item for item in entries
                       if path in (item.get('contentPaths') or [item['contentPath']])
                       or path == item['metadataPath']), None)
+        if entry is not None and catalog is not None:
+            # Reuse discovery, never stale metadata. Read the selected package live;
+            # snapshot below still rebuilds every dependency hash before revision checks.
+            package = root / entry['packagePath']
+            location = entry.get('location')
+            if entry['documentType'] == 'lessons-learned':
+                entry = lesson_entry(root, package, identity_root)
+            elif 'contract' in entry:
+                entry = contract_entry(root, package)
+            else:
+                entry = catalog_entry(root, package, entry['documentType'])
+            if location is not None:
+                entry['location'] = location
     if entry is None:
         raise ValueError('Read path is not a canonical Document content path')
     bodies, hashes, current = snapshot(root, entry, observer)
@@ -107,11 +123,11 @@ def read_document(root, path, anchor=None, revision=None, documents_root=None, o
                 guidance='Selected sections are discovery aids. Read linked rules, decisions and exceptions before acting.')
 
 
-def search(root: Path, query: str, document_type=None, category=None, limit=20, scope=None, documents_root=None, match='all', offset=0, observer=None) -> dict:
+def search(root: Path, query: str, document_type=None, category=None, limit=20, scope=None, documents_root=None, match='all', offset=0, observer=None, *, catalog=None) -> dict:
     terms = [term.casefold() for term in query.split() if term]
     if not terms:
         raise ValueError("Search query must contain non-whitespace text")
-    if limit < 1 or limit > 100:
+    if limit is not None and (limit < 1 or limit > 100):
         raise ValueError("Search limit must be between 1 and 100")
     if match not in ('all', 'any') or type(offset) is not int or offset < 0:
         raise ValueError('Expected match all/any and nonnegative offset')
@@ -119,7 +135,8 @@ def search(root: Path, query: str, document_type=None, category=None, limit=20, 
     identity_root = root.resolve(strict=True)
     root = (documents_root or root).resolve(strict=True)
     matches = []
-    for entry in build_catalog(identity_root, root)["documents"]:
+    entries = catalog if catalog is not None else build_catalog(identity_root, root)['documents']
+    for entry in entries:
         if document_type and entry["documentType"] != document_type:
             continue
         if category and entry["category"] != category:
@@ -156,16 +173,55 @@ def search(root: Path, query: str, document_type=None, category=None, limit=20, 
             item["domain"] or "", item["name"],
         )
     )
+    # Internal callers can consume the already computed complete result set once.
+    # CLI pagination retains its size/offset contract.
+    page = matches[offset:] if limit is None else matches[offset:offset + limit]
     return {
         "schemaVersion": "0.1.0",
         "kind": "document-search-results",
         "query": query,
-        "count": len(matches[offset:offset + limit]),
-        "results": matches[offset:offset + limit],
+        "count": len(page),
+        "results": page,
         "totalCount": len(matches), "offset": offset,
-        "nextOffset": offset + limit if offset + limit < len(matches) else None,
+        "nextOffset": offset + limit if limit is not None and offset + limit < len(matches) else None,
         "match": match,
     }
+
+
+def read_selections(root, selections, documents_root=None):
+    """Read explicit sources in order; publish no partial or mixed-revision bundle."""
+    from execution.document_context import validate
+
+    selections = validate({'selections': selections})['selections']
+    reads, revisions, catalog = [], {}, None
+    for item in selections:
+        parts = Path(item['path']).parts
+        if not (len(parts) >= 4 and parts[:2] == ('docs', 'skills')) and catalog is None:
+            catalog = build_catalog(root, documents_root)['documents']
+        read = read_document(root, item['path'], item.get('anchor'), item.get('revision'),
+                             documents_root, catalog=catalog)
+        if revisions.setdefault(read['entryPath'], read['revision']) != read['revision']:
+            raise ValueError('Document revision changed within batch; read current sources again')
+        reads.append(read)
+    return dict(schemaVersion='0.1.0', kind='document-read-context', reads=reads, candidates=[])
+
+
+def encode_result(result, *, compact=False):
+    """Keep legacy CLI output by default; opt in to lossless source sharing."""
+    if not compact:
+        return json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
+    inline = json.dumps(result, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
+    if result.get('kind') in ('document-read', 'document-read-context'):
+        from execution.document_context import encode_context
+
+        bundle = result if result['kind'] == 'document-read-context' else dict(
+            schemaVersion=result['schemaVersion'], kind='document-read-context',
+            reads=[result], candidates=[])
+        shared, metrics = encode_context(bundle)
+        if (metrics['contextLayout'] == 'shared-sources-v1'
+                and len(shared.encode('utf-8')) < len(inline.encode('utf-8'))):
+            return shared
+    return inline
 
 
 def main() -> int:
@@ -174,6 +230,8 @@ def main() -> int:
     operation = parser.add_mutually_exclusive_group(required=True)
     operation.add_argument("--query")
     operation.add_argument("--read-path", help="Canonical project-relative Document or docs/skills text path")
+    operation.add_argument("--read-selections-file", type=Path,
+                           help="JSON array of canonical path, optional anchor/revision objects; one complete read bundle")
     parser.add_argument("--anchor", help="Read one ATX section by explicit HTML ID or heading slug; retains complete entry guidance")
     parser.add_argument("--revision", help="Require a matching package revision when reading; stale input fails closed")
     parser.add_argument("--match", choices=('all', 'any'), default='all', help="all preserves legacy AND search; any explicitly explores partial lexical matches")
@@ -183,18 +241,24 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--scope")
     parser.add_argument("--documents-root", type=Path, help="Physical workspace containing docs; runtime identity stays --project-root")
+    parser.add_argument("--compact", action="store_true", help="Compact JSON; reads may use shared-sources-v1, retaining complete entry guidance and metadata")
     args = parser.parse_args()
     try:
         if args.read_path:
             results = read_document(args.project_root, args.read_path, args.anchor, args.revision, args.documents_root)
         else:
-            if args.anchor or args.revision:
-                raise ValueError('--anchor and --revision require --read-path')
-            results = search(args.project_root, args.query, args.type, args.category, args.limit, args.scope, args.documents_root, args.match, args.offset)
-    except (OSError, TypeError, ValueError) as error:
+            if args.anchor is not None or args.revision is not None:
+                raise ValueError('--anchor and --revision require --read-path; batch selections carry their own values')
+            if args.read_selections_file is not None:
+                selections = json.loads(args.read_selections_file.read_text(encoding='utf-8'))
+                results = read_selections(args.project_root, selections, args.documents_root)
+            else:
+                results = search(args.project_root, args.query, args.type, args.category, args.limit, args.scope, args.documents_root, args.match, args.offset)
+        output = encode_result(results, compact=args.compact)
+    except (OSError, TypeError, ValueError, ContractError) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 1
-    print(json.dumps(results, ensure_ascii=False, indent=2, sort_keys=True))
+    print(output)
     return 0
 
 

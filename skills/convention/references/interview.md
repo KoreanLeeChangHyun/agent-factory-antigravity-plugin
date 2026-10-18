@@ -70,12 +70,6 @@
 
 **질문 [{current}/{known total}]:** {question}
 
-| 선택지 | 결정 | 장점 | 단점 |
-|---|---|---|---|
-| 1 | {decision} | {advantage} | {disadvantage} |
-| 2 | {decision} | {advantage} | {disadvantage} |
-| 3 | {decision} | {advantage} | {disadvantage} |
-
 **권고:** {recommendation}
 
 **이전 결정:**
@@ -85,12 +79,6 @@
 **English structure**
 
 **Question [{current}/{known total}]:** {question}
-
-| Option | Decision | Advantages | Disadvantages |
-|---|---|---|---|
-| 1 | {decision} | {advantage} | {disadvantage} |
-| 2 | {decision} | {advantage} | {disadvantage} |
-| 3 | {decision} | {advantage} | {disadvantage} |
 
 **Recommendation:** {recommendation}
 
@@ -110,6 +98,18 @@
 - When the Human supplies a requirement without answering the active question, record
   that requirement and continue the unanswered question. Recalculate the total only when
   the decision inventory changed.
+
+| 선택지 | 결정 | 장점 | 단점 |
+|---|---|---|---|
+| 1 | {decision} | {advantage} | {disadvantage} |
+| 2 | {decision} | {advantage} | {disadvantage} |
+| 3 | {decision} | {advantage} | {disadvantage} |
+
+| Option | Decision | Advantages | Disadvantages |
+|---|---|---|---|
+| 1 | {decision} | {advantage} | {disadvantage} |
+| 2 | {decision} | {advantage} | {disadvantage} |
+| 3 | {decision} | {advantage} | {disadvantage} |
 
 <a id="completion-and-record"></a>
 

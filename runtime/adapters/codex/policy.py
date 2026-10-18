@@ -7,7 +7,7 @@ import hashlib
 import os
 import re
 from execution.policy import _open_regular, _json
-from tasks import orchestrator_guard
+from hooks import orchestrator_guard
 
 
 # Exact-run named permissions; never grant the read-only code root write access.

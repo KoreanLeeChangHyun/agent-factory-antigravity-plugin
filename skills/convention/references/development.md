@@ -8,6 +8,8 @@
 
 ## 1. Changes
 
+### 1.1. Scope, reuse and UI guidance
+
 - Inspect the owning component, callers and existing patterns; keep changes bounded.
   Preserve unrelated work, public contracts and accepted identities.
 - Separate broad formatting/refactoring when it would obscure behavioral review.
@@ -15,11 +17,17 @@
   [Libraries](libraries.md) for dependencies; follow the project's native layout.
 - Before changing any UI, apply [Theme and visual acceptance](theme.md); include its
   applicable checks in the task's completion criteria.
+
+### 1.2. Paths and source ownership
+
 - Resolve filesystem targets and adapters explicitly; never silently broaden, mirror or
   migrate storage. Initialization preserves files unless exact overwrite/merge behavior
   is authorized.
 - Distinguish generated/copied assets from reusable source; document their sync contract.
 - Agent Factory document paths are not a universal source-code layout.
+
+### 1.3. Tests and domain interfaces
+
 - Follow [Testing](testing.md#source-organization) for test placement.
 - Keep domain names/interfaces consistent; separate observed facts, accepted decisions,
   inferences and unresolved questions. Local implementations are not universal
@@ -27,7 +35,9 @@
 
 <a id="code-ownership-and-minimal-design"></a>
 
-### 1.1. Code ownership and minimal design
+<a id="11-code-ownership-and-minimal-design"></a>
+
+### 1.4. Code ownership and minimal design
 
 - **MUST NOT independently duplicate an existing implementation of the same
   responsibility or rule.** Before writing code, locate its owning module and callers;
@@ -52,7 +62,9 @@
 
 <a id="commands-and-paths"></a>
 
-### 1.2. Commands and paths
+<a id="12-commands-and-paths"></a>
+
+### 1.5. Commands and paths
 
 - Locate a file with a file listing, search or an explicit link before reading, editing
   or passing it to a command. Do not guess names from a feature, and do not reuse paths
@@ -66,8 +78,15 @@
 - Write portable shell: avoid globs that may match nothing (zsh aborts on them), keep
   commands and arguments in arrays rather than string variables, delimit variables as
   `${NAME}` before adjacent text, and move deeply nested quoting into a script.
-- Keep each tool output within its budget: read targeted ranges or narrowed searches,
-  and write large surveys to a temporary file before reviewing them in parts.
+- Select evidence before printing: needed capabilities from tool catalogs, relevant JSON
+  fields, and article sections without navigation. For bound file changes, use scoped
+  status/diff (for example `git status --short -- <paths>`); inspect broader state when needed.
+- Plan ranges/fields and the combined output budget before batching reads. Keep large
+  surveys in a temporary file and review needed parts; do not print full histories or
+  inventories just to discover a target. Preserve full source access and required evidence.
+- Reuse current instructions/results already supplied. Read changed or missing sections;
+  after truncation, narrow the missing range instead of repeating the full read. Never
+  impose a total data limit or treat truncated output as complete evidence.
 
 <a id="shared-checkout-coordination"></a>
 

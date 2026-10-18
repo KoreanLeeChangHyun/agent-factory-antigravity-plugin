@@ -164,7 +164,9 @@ class Events:
             if not self.started or event.get("session_id") != self.session:
                 raise ValueError("Claude terminal session does not match initialization")
             if event.get("is_error") is not False or event.get("subtype") != "success":
-                raise ValueError("Claude execution failed: " + str(event.get("errors") or event.get("subtype")))
+                # The result text carries the reason when there is one, such as a usage limit.
+                reason = event.get("errors") or event.get("result") or event.get("subtype")
+                raise ValueError("Claude execution failed: " + str(reason)[:2000])
             terminal = event.get("structured_output")
             if not isinstance(terminal, dict):
                 raise ValueError("Claude returned no schema-validated structured_output")

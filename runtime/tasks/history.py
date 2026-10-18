@@ -113,6 +113,7 @@ def delete(runtime, args):
                 value = runtime.safe_read_json(dispatch)
                 binding = (value.get("dispatchTuple") or {}).get("taskBinding") or {}
                 if (value.get("runId") == state["runId"] or
+                        (state.get("dispatchId") and value.get("dispatchId") == state["dispatchId"]) or
                         (binding.get("workflowId") == args.workflow_id and binding.get("taskId") == args.task_id
                          and (value.get("dispatchTuple") or {}).get("parentAgentId") == args.main_agent)):
                     files.add(dispatch)
@@ -208,12 +209,20 @@ def delete(runtime, args):
                 byte_writes[markdown] = progress.render(current).encode("utf-8")
 
         # Never follow a link, including links buried in a run's attachments.
+        # rmtree removes a nested link itself without following it when the
+        # platform supports descriptor-based removal (for example a source
+        # snapshot's node_modules link); otherwise such a link is refused.
         for directory in directories:
             runtime.runtime_paths.inspect(directory)
             for child in directory.rglob("*"):
+                if child.is_symlink() and shutil.rmtree.avoids_symlink_attacks:
+                    continue
                 runtime.runtime_paths.inspect(child)
         for file in files | set(writes) | set(byte_writes):
             runtime.runtime_paths.inspect(file, missing=True)
+        if getattr(args, "dry_run", False):
+            return {"kind": "task-history-deletable", "mainAgentId": args.main_agent,
+                    "workflowId": args.workflow_id, "taskId": args.task_id}
         # Persist shared-record pruning before unlinking private records. Any error
         # is propagated; the Host must not acknowledge success on partial failure.
         for path, value in writes.items():

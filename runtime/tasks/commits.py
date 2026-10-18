@@ -11,7 +11,7 @@ from storage.errors import ContractError
 from storage.files import file_lock, safe_read_json
 from storage import paths as runtime_paths
 from storage.lessons import operational_path
-from tasks.orchestrator_guard import has_symlink
+from hooks.orchestrator_guard import has_symlink
 
 
 def fail(message):
@@ -77,11 +77,10 @@ def evidence(root, main_state, proposal):
         elif not (skip.get("actor") == "human" and skip.get("authorizationReference")
                   and skip.get("decisionEvidence") and skip.get("recordedAt")):
             fail("This route requires its bound Verification evidence or recorded Human skip")
-    if work.get("workProfile") == "scribe":
-        review = (loop or {}).get("draftReview") or {}
-        if (review.get("status") != "accepted" or review.get("workRunId") != work["runId"]
-                or not review.get("authorizationReference") or not review.get("decisionEvidence")):
-            fail("Scribe draft requires the recorded Human acceptance")
+    review = (loop or {}).get("draftReview") or {}
+    # Scribe Documents need only the commit authority; a legacy recorded rejection still holds.
+    if review.get("workRunId") == work["runId"] and review.get("status") in {"changes-requested", "discarded"}:
+        fail("The Human recorded this Scribe draft as " + review["status"])
     return receipt
 
 

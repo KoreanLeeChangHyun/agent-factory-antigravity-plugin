@@ -20,6 +20,9 @@
 - Managed graph, role boundaries, and project-specialized Work profiles: Agent
   `SKILL.md` and `references/project-specialist.md`
 - Shared conventions and task routing: Convention `SKILL.md`
+- How the AI observes and tests this project itself (captures, logs, scenarios, check
+  baselines): Convention `references/verification-environment.md`; this project's record
+  lives in its rule Document
 - Standalone HTML, SVG, screenshots and other generated files: Convention `SKILL.md#artifacts`
 - Human decisions: Convention `SKILL.md#human-decisions`
 - Runtime locations: Agent `references/home-runtime.md`
@@ -30,9 +33,14 @@
 
 ## 2. Ownership and storage
 
+### 2.1. Project and artifact locations
+
 - This project uses Agent Factory.
-- Use `<project-root>/docs/artifact/<category>/<task-or-topic>/` for standalone generated outputs outside Document
+- Use `<project-root>/docs/artifact/<domain>/<filename>` for standalone generated outputs outside Document
   packages, following Convention's Artifacts contract. No `SKILL.md` wrapper is required.
+
+### 2.2. Canonical Document packages
+
 - Keep canonical Refined and Human-requested Specification (Skill document) packages below `docs/refined/`
   and `docs/skills/`, following Document's type-specific routing in the Human's language plus optional `assets/`
   under the Documents contract.
@@ -41,6 +49,9 @@
 - Refined uses `document-type: processed` for compatibility and is not automatically an active Skill or Specification.
 - Route Original packages below `docs/original/`.
 - Consult Document's `references/layout.md` for the complete directory map and runtime boundary.
+
+### 2.3. Records, discovery and preservation
+
 - Route contract Progress below `docs/progress/<contract-id>/` and Lessons Learned below
   `docs/lessons-learned/`, following their Document type guides.
 - Discover Original, Refined, Progress and Lessons Learned packages through the Document Skill's local catalog

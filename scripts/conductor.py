@@ -8,8 +8,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'runtime'))
 from execution.cli import JsonArgumentParser, add_project_argument
 from storage.files import emit, error_document
 from storage.errors import ContractError
-from tasks.conductor import Conductor
-from tasks.conductor_backend import ManagedBackend
+from conductor.routing import Conductor
+from conductor.backend import ManagedBackend
 
 
 def build_parser():

@@ -131,6 +131,26 @@ def _event(document, by, action, **fields):
     document["history"].append({**by, "action": action, **fields})
 
 
+def set_capacity(runtime_root, domain_id, maximum, actor, source, expected_revision=None):
+    from conductor.session_pool import limit, observe, operating
+    limit({"maxSessions": maximum})
+    if actor != "human":
+        raise ContractError("domain_protected", "Only the Human changes operating-session limits")
+    by = _actor(actor, source)
+
+    def change(document):
+        domain = next((item for item in document["domains"] if item["id"] == domain_id), None)
+        if domain is None:
+            raise ContractError("domain_missing", "Unknown domain")
+        entries = observe(runtime_root, document)
+        document.setdefault("sessionPools", {})[domain_id] = operating(document, domain, entries)
+        domain["maxSessions"] = maximum
+        document["sessionPools"][domain_id] = operating(document, domain, entries)
+        _event(document, by, "capacity", domainId=domain_id, maxSessions=maximum)
+        return {"domainId": domain_id}
+    return _mutate(runtime_root, expected_revision, change)
+
+
 def create(runtime_root, name, actor, source, expected_revision=None):
     """Create a domain with a real work-area name; for Main ("ai") an existing matching name is reused."""
     name, by = _real_name(name, actor), _actor(actor, source)
@@ -372,7 +392,7 @@ def subdomain(runtime_root, domain_id, name, actor, source, expected_revision=No
     """Add an explicit child area without migrating domains or legacy memberships."""
     name, by = name_of(name), _actor(actor, source)
     if write_scope is not None:
-        from tasks.conductor_intents import scope_paths
+        from conductor.intents import scope_paths
         scope_paths(write_scope)
 
     def change(document):

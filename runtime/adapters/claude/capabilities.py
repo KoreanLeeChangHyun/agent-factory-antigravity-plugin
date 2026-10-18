@@ -6,7 +6,7 @@ import shutil
 import subprocess
 
 from tasks.modes import TASK_MODES
-from tasks.subagent_guard import ALLOWED_TYPE
+from hooks.subagent_guard import ALLOWED_TYPE
 
 MODELS = {"claude-opus": "opus", "claude-sonnet": "sonnet", "claude-haiku": "haiku"}
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
@@ -39,8 +39,10 @@ def _probe(executable):
     diagnostic = None
     available = False
     try:
-        result = subprocess.run([executable, "--help"], capture_output=True, text=True, timeout=10)
-        missing = [flag for flag in REQUIRED_OPTIONS if flag not in result.stdout]
+        # CLI output is UTF-8 even when Windows Python uses a legacy code page.
+        result = subprocess.run([executable, "--help"], capture_output=True,
+                                encoding="utf-8", errors="replace", timeout=10)
+        missing = [flag for flag in REQUIRED_OPTIONS if flag not in (result.stdout or "")]
         available = result.returncode == 0 and not missing
         if not available:
             diagnostic = ("Installed Claude CLI lacks required print protocol options: " + ", ".join(missing)
@@ -61,7 +63,8 @@ def _probe(executable):
 def _version(executable):
     """Return `claude --version` as a tuple such as (2, 1, 285), or None when it cannot be read."""
     try:
-        result = subprocess.run([executable, "--version"], capture_output=True, text=True, timeout=10)
+        result = subprocess.run([executable, "--version"], capture_output=True,
+                                encoding="utf-8", errors="replace", timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         return None
     match = re.match(r"\s*(\d+)\.(\d+)\.(\d+)", result.stdout or "") if result.returncode == 0 else None

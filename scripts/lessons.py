@@ -268,15 +268,9 @@ def brief(root, items):
     close = json.dumps({'close': [item['runId'] for item in items], 'by': '<this Scribe run>'}, ensure_ascii=False)
     facts = {item['runId']: capture.read_facts(item['runDirectory']) for item in items}
     occurrences = [fact['occurrenceId'] for values in facts.values() for fact in values if fact.get('occurrenceId')]
-    lines = ['# Brief: 교훈 작성 위임 (Scribe, 초안)', '', '## Goal', '',
+    lines = ['Title: 교훈 작성 위임', '', '## Goal', '',
              '- 아래 run에서 시스템이 수집한 사실을 검토해, 필요한 교훈을 사건별로 기록합니다.',
-             '- Main은 교훈을 쓰지 않으므로 이 작성은 이 run이 맡습니다.', '', '## Inputs', '',
-             f'- 프로젝트: `{root}`', f'- 대상 run {len(items)}건, 사실 {sum(map(len, facts.values()))}건']
-    for item in items:
-        lines += ['', f"### {item.get('agentId')} / {item['runId']} ({item.get('role')})", '',
-                  f"- run 디렉터리: `{item['runDirectory']}` (state.json, request.md, events.jsonl, 결과)", '- 사실:']
-        lines += [describe(fact) for fact in facts[item['runId']]]
-    lines += ['', '## Scope', '',
+             '- Main은 교훈을 쓰지 않으므로 이 작성은 이 run이 맡습니다.', '', '## Scope', '',
               '- run의 요청·이벤트·결과를 읽어 원인·해결·검증을 근거로 채웁니다. 근거가 없으면 원인 미확인·미해결로 두고 꾸며내지 않습니다.',
               f'- 오류는 `{cli} record --project-root {root} --input <json>`(category error)로 기록하고, 원인이 확인되면 `resolve`합니다. failure 사실은 occurrenceId와 source를 그대로 인용합니다.',
               '- human-correction·judgment 사실은 사용자님 원문(evidence)과 응답을 함께 읽고 category judgment로 기록합니다.',
@@ -286,7 +280,13 @@ def brief(root, items):
               '- 각 사실이 교훈에 반영되었거나, 반영하지 않은 이유가 보고됩니다.',
               f"- `{cli} audit --project-root {root} --input-json '{json.dumps({'occurrenceIds': occurrences})}'`의 missing이 비어 있습니다.",
               f"- 마친 뒤 `{cli} pending --project-root {root} --input-json '{close}'`로 대기 항목을 닫습니다.",
-              '', '## Report', '', '- 기록·해결한 교훈 id, 반영하지 않은 사실과 이유, audit 결과를 보고합니다.', '']
+              '- 결과에 기록·해결한 교훈 id, 반영하지 않은 사실과 이유, audit 결과가 있습니다.',
+              '', '## References', '', f'- 프로젝트: `{root}`', f'- 대상 run {len(items)}건, 사실 {sum(map(len, facts.values()))}건']
+    for item in items:
+        lines += ['', f"### {item.get('agentId')} / {item['runId']} ({item.get('role')})", '',
+                  f"- run 디렉터리: `{item['runDirectory']}` (state.json, request.md, events.jsonl, 결과)", '- 사실:']
+        lines += [describe(fact) for fact in facts[item['runId']]]
+    lines += ['']
     return {'brief': '\n'.join(lines), 'runIds': [item['runId'] for item in items],
             'factCount': sum(map(len, facts.values())), 'occurrenceIds': occurrences}
 
@@ -550,18 +550,22 @@ def main():
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument('--input', type=Path)
     inputs.add_argument('--input-json', help='Inline JSON payload; avoids temporary input files for read-only queries')
+    parser.add_argument('--compact', action='store_true', help='Compact JSON output without dropping records, rules or diagnostics')
     args = parser.parse_args()
+    json_options = {'ensure_ascii': False}
+    if args.compact:
+        json_options['separators'] = (',', ':')
     try:
         data = json.loads(args.input_json if args.input_json is not None else args.input.read_text(encoding='utf-8'))
         if not isinstance(data, dict):
             raise ValueError('Input must be a JSON object')
-        print(json.dumps(operate(args.project_root, args.action, data, args.documents_root), ensure_ascii=False))
+        print(json.dumps(operate(args.project_root, args.action, data, args.documents_root), **json_options))
         return 0
     except LessonStorageError as error:
-        print(json.dumps(error.diagnostic(), ensure_ascii=False))
+        print(json.dumps(error.diagnostic(), **json_options))
         return 1
     except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
-        print(json.dumps({'error': str(error)}, ensure_ascii=False))
+        print(json.dumps({'error': str(error)}, **json_options))
         return 1
 
 

@@ -11,7 +11,7 @@ from adapters.claude.capabilities import MODELS
 from adapters.claude.control import goal_commands
 from adapters.claude.policy import effort, inspection_arguments, orchestrator_arguments, orchestrator_hook_arguments, permission_arguments, profile_arguments, validate, work_subagent_arguments
 from storage.files import atomic_write, atomic_write_json, safe_read_bytes, safe_read_json
-from tasks import orchestrator_guard
+from hooks import orchestrator_guard
 from contracts.receipts import result_only_schema
 
 TRANSPORT = Path(__file__).with_name("transport.py")

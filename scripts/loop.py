@@ -82,6 +82,9 @@ FAILURE_CLASSES = {
         "task_preparation_failed", "task_guidance_missing", "task_guidance_unsafe", "task_check_input_changed",
     },
     "human": {"needs-human-decision", "revision_limit_reached", "cancelled"},
+    # The provider's usage or rate limit: the same task continues on another provider (Human decision 2026-10-18,
+    # message 73404444).
+    "quota": {"rate_limit_exceeded"},
 }
 
 
@@ -121,6 +124,8 @@ def publish_progress(path, state):
 def save_loop_state(path, state):
     state["stateRevision"] = state.get("stateRevision", 0) + 1
     agent_exec.atomic_write_json(path, state)
+    from runs.trace import loop_transition
+    loop_transition(state)
     publish_progress(path, state)
 
 
@@ -528,7 +533,7 @@ def prepare_dispatch(
         trigger = "steering" if trigger == "initial" else trigger
         request_file = write_request(path.parent, "steering-" + uuid.uuid4().hex + ".md",
             content.decode("utf-8") + "\n\n[Bound additions to this task; preserve captured authority]\n"
-            + json.dumps(queued, ensure_ascii=False))
+            + json.dumps(queued, ensure_ascii=False, separators=(",", ":")))
         content = agent_exec.safe_read_bytes(request_file, agent_exec.MAX_REQUEST_BYTES)
     if (role == "work" and state.get("latestWorkRunId") and recovery_of_run_id is None
             and not state.get("handoffContinuationPending")
@@ -791,7 +796,7 @@ def require_domain_membership(args: argparse.Namespace) -> None:
 
     Checked before anything is accepted, so a refused dispatch registers no worker.
     """
-    from tasks import domains
+    from conductor import domains
     root = agent_exec.resolve_project_root(args.project_root)
     runtime_root = Path(agent_exec.runtime_paths.resolve(root, create=True)["runtimeRoot"])
     document = domains.read(runtime_root)
@@ -822,7 +827,7 @@ def link_allocation_domain(args: argparse.Namespace, result: dict[str, Any]) -> 
     name = (allocation or {}).get("domain")
     if not isinstance(name, str) or not result.get("loopId"):
         return result
-    from tasks import domains
+    from conductor import domains
     links = {}
     for field, agent in (("domainLink", args.work_agent), ("verificationDomainLink", getattr(args, "verification_agent", None))):
         if not agent:
@@ -992,9 +997,9 @@ def _start_loop_captured(args: argparse.Namespace) -> dict[str, Any]:
     if isolation and any(task["id"] not in workspace_plans for task in tasks) and not getattr(args, "captured_workspace_plan", None):
         raise agent_exec.ContractError("task_workspace_required", "Work isolation is on; every task requires a code or read-only workspace plan")
     if work_profile == "scribe" and any(plan.get("mode") == "code" for plan in (*workspace_plans.values(), workspace_plan or {})):
-        # A code Work Unit is committed and merged automatically; a Scribe draft must wait for the Human's review.
+        # A code Work Unit is committed and merged automatically; Scribe Documents are committed only by Main with actual commit authority.
         raise agent_exec.ContractError("scribe_draft_review_required",
-                                       "Scribe drafts stay uncommitted in the shared checkout for Human review; use the read-only workspace plan")
+                                       "Scribe writes Documents in the shared checkout, committed only by Main with actual commit authority; use the read-only workspace plan")
     if args.task_id != tasks[0]["id"]:
         raise agent_exec.ContractError("task_order_invalid", "Submit the first task; the engine executes the whole list in order")
     validate_assignments(tasks, root, args.work_agent, args.verification_agent)
@@ -1002,7 +1007,7 @@ def _start_loop_captured(args: argparse.Namespace) -> dict[str, Any]:
         task.setdefault("workAgentId", args.work_agent)
         if args.verification_agent:
             task.setdefault("verificationAgentId", args.verification_agent)
-    from tasks import team
+    from conductor import team
     reused = agent_exec.session_file(root, args.work_agent).exists()
     recommendation = ((submitted_document["tasks"][0].get("allocation") or {}).get("modelRecommendation") or {})
     if reused and work_model_override and recommendation.get("status") != "human-specified":
@@ -1187,7 +1192,7 @@ Receipt recovery evidence:
     additions += [item for item in state.get("steering", [])
                   if item.get("taskId") == binding.get("taskId") and item.get("status") == "delivered"]
     addition_context = ("\nAccepted additions to this same task (check these as well as the original completion criteria):\n"
-                        + json.dumps(additions, ensure_ascii=False, indent=2)) if additions else ""
+                        + json.dumps(additions, ensure_ascii=False, separators=(",", ":"))) if additions else ""
     return write_request(directory, f"verification-{work['runId']}.md", f"""Verify this Work result.
 
 Original request: {state['originalRequestPath']}
@@ -1199,7 +1204,7 @@ Work receipt: {work['receiptPath']}
 
 
 def revision_request(state: dict[str, Any], verification: dict[str, Any], receipt: dict[str, Any], directory: Path) -> Path:
-    findings = json.dumps(receipt["findings"], ensure_ascii=False, indent=2)
+    findings = json.dumps(receipt["findings"], ensure_ascii=False, separators=(",", ":"))
     return write_request(directory, f"revision-{verification['runId']}.md", f"""Address these failed Verification findings.
 
 Original request: {state['originalRequestPath']}
@@ -1515,8 +1520,6 @@ def finish_workflow_task(state, path, runtime, reason):
                  terminalReason={"code": reason, "message": "All submitted tasks completed"}, updatedAt=now())
     if state.pop("revisionOnlyTaskId", None):
         state["terminalReason"]["message"] = "The selected task revision completed; other task histories were preserved"
-    if state["execution"].get("workProfile") == "scribe" and state.get("latestWorkRunId"):
-        record_draft_review(state, runtime)
     if state.get("lifecycleVersion"):
         state["completion"] = {"work": "completed", "integration": "merged" if state.get("taskWorkspaces") else "not-requested",
                                "cleanupPending": any(u.get("cleanupPending") for v in state.get("taskWorkspaces", {}).values() for u in v["repositories"])}
@@ -1524,20 +1527,11 @@ def finish_workflow_task(state, path, runtime, reason):
     return public_state(state)
 
 
-def record_draft_review(state, runtime):
-    """A Scribe's changes stay uncommitted drafts until the Human accepts, revises or discards them."""
-    work = runtime.status(assigned_agent(state, "work"), state["latestWorkRunId"])
-    receipt = agent_exec.validate_receipt(Path(state["projectRoot"]), work, agent_id=work["agentId"], run_id=work["runId"])
-    paths = sorted({str(path) for path in receipt.get("changedPaths") or []})
-    if paths:
-        state["draftReview"] = {"status": "pending", "paths": paths, "workRunId": work["runId"], "recordedAt": now()}
-
-
 DRAFT_REVIEW_DECISIONS = ("accepted", "changes-requested", "discarded")
 
 
 def review_draft(args: argparse.Namespace) -> dict[str, Any]:
-    """Record the Human's decision on a completed Scribe draft; the runtime itself commits or reverts nothing."""
+    """Record a Human decision on a legacy pending Scribe draft review; new loops record none and await no review."""
     if args.actor != "human" or not args.authorization_reference.strip() or not args.decision_evidence.strip():
         raise agent_exec.ContractError("draft_review_unauthorized", "A draft review decision requires Human authorization and evidence")
     root = agent_exec.resolve_project_root(args.project_root)
@@ -1546,7 +1540,7 @@ def review_draft(args: argparse.Namespace) -> dict[str, Any]:
         state = agent_exec.safe_read_json(path)
         review = state.get("draftReview")
         if state.get("status") != "completed" or not isinstance(review, dict) or review.get("status") != "pending":
-            raise agent_exec.ContractError("draft_review_unavailable", "The loop has no Scribe draft awaiting review")
+            raise agent_exec.ContractError("draft_review_unavailable", "The loop has no legacy pending Scribe draft review")
         review.update(status=args.decision, decidedAt=now(), authorizationReference=args.authorization_reference,
                       decisionEvidence=args.decision_evidence, **({"note": args.note} if args.note else {}))
         state["updatedAt"] = now()
@@ -1755,7 +1749,8 @@ def revise_loop(args):
         raise agent_exec.ContractError("revision_evidence_required", "Provide the exact authorized correction and its reference")
     root = agent_exec.resolve_project_root(args.project_root)
     path, _ = read_state(root, args.work_agent, args.loop_id)
-    from tasks import team, binding as task_binding
+    from tasks import binding as task_binding
+    from conductor import team
     with team.assignment_lock(agent_exec, root), agent_exec.file_lock(path.parent / ".loop.lock"):
         state = agent_exec.safe_read_json(path)
         workflow = state.get("workflow") or {}
@@ -1901,7 +1896,7 @@ def status_loop(args: argparse.Namespace) -> dict[str, Any]:
     if isinstance(state.get("currentChild"), dict) and state["status"] not in {"completed", "cancelled"}:
         current = state["currentChild"]
         child = AgentRuntime(root).status(current["agentId"], current["runId"])
-    from tasks import control_center
+    from conductor import control_center
     result = public_state(state, child)
     result["controlCenter"] = control_center.snapshot(
         state, lambda agent, run: agent_exec.find_run(root, agent, run))
@@ -2103,7 +2098,10 @@ def handoff_loop(args):
     A running Work child is cancelled first; the prior session and its runs are never changed. The bundle becomes
     the new session's request, and the handoff record links both sessions in the loop state.
     """
-    if args.actor != "human" or not args.authorization_reference.strip() or not args.decision_evidence.strip():
+    # Main may hand off on its own only when a provider's quota ran out, to another provider (Human decision
+    # 2026-10-18, message 73404444); every other handoff stays the Human's.
+    quota = getattr(args, "trigger", "human") == "quota"
+    if (args.actor != "human" and not (args.actor == "main" and quota)) or not args.authorization_reference.strip() or not args.decision_evidence.strip():
         raise agent_exec.ContractError("loop_handoff_unauthorized", "A provider handoff requires Human authorization and evidence")
     root = agent_exec.resolve_project_root(args.project_root)
     agent_exec.validate_id(args.to_agent, agent_exec.AGENT_ID, "to_agent")
@@ -2136,6 +2134,8 @@ def handoff_loop(args):
             raise agent_exec.ContractError("loop_handoff_session_invalid", "Hand off to a new Work session ID")
         if to_provider == from_provider and args.to_model == from_model:
             raise agent_exec.ContractError("loop_handoff_unchanged", "Choose another provider or model for the handoff")
+        if quota and to_provider == from_provider:
+            raise agent_exec.ContractError("loop_handoff_unchanged", "A quota handoff moves the task to another provider")
         place_handoff_worker = handoff_membership(root, state, from_agent, args.to_agent)
         prior = runtime.status(current["agentId"], current["runId"]) if current else None
         if prior and prior["status"] not in CHILD_TERMINAL:
@@ -2158,7 +2158,7 @@ def handoff_loop(args):
                    "toAgentId": args.to_agent, "toProvider": to_provider, "toModel": args.to_model,
                    "taskId": state["execution"]["taskBinding"]["taskId"], "reason": args.reason,
                    "loopStatus": state["status"], "loopPhase": state["phase"],
-                   "actor": args.actor, "authorizationReference": args.authorization_reference.strip(),
+                   "actor": args.actor, "trigger": "quota" if quota else "human", "authorizationReference": args.authorization_reference.strip(),
                    "decisionEvidence": args.decision_evidence.strip(), "createdAt": now(), "toRunId": None}
         bundle = write_request(path.parent, handoff["id"] + ".md", handoff_bundle(state, root, handoff, prior, session))
         handoff.update(bundlePath=str(bundle), bundleSha256=hashlib.sha256(bundle.read_bytes()).hexdigest())
@@ -2183,7 +2183,7 @@ def handoff_membership(root, state, from_agent, to_agent):
     Checked before the prior run is cancelled; returns the placement to perform once the handoff is recorded.
     A placement failure after that point is reported, like a dispatch domain link, instead of undoing the handoff.
     """
-    from tasks import domains
+    from conductor import domains
     runtime_root = Path(agent_exec.runtime_paths.resolve(root)["runtimeRoot"])
     document = domains.read(runtime_root)
     name = ((state.get("execution", {}).get("taskBinding") or {}).get("allocation") or {}).get("domain")
@@ -2419,7 +2419,7 @@ def build_parser() -> agent_exec.JsonArgumentParser:
             command.add_argument("--task-id", required=True)
         if name == "review":
             command.add_argument("--decision", choices=DRAFT_REVIEW_DECISIONS, required=True,
-                                 help="Human decision on a completed Scribe draft; records only, never commits or reverts files")
+                                 help="Optional Human decision on a legacy pending Scribe draft review; records only, never commits or reverts files")
             command.add_argument("--note", help="The Human's requested changes or reason")
         if name == "handoff":
             command.add_argument("--to-agent", required=True, help="New Work session that takes over the current and remaining tasks")
@@ -2427,6 +2427,8 @@ def build_parser() -> agent_exec.JsonArgumentParser:
             command.add_argument("--to-reasoning-effort", choices=("none", "low", "medium", "high", "xhigh", "max"))
             command.add_argument("--to-fast", action=argparse.BooleanOptionalAction, default=None)
             command.add_argument("--reason", help="Why the task moves, recorded in the handoff bundle")
+            command.add_argument("--trigger", choices=("human", "quota"), default="human",
+                                 help="quota: the provider's usage limit ran out; Main may then hand off to another provider itself")
         if name == "extend-revisions":
             command.add_argument("--additional", type=int, default=1,
                                  help="Further Work revisions the Human authorizes after the limit stopped the loop")
@@ -2455,12 +2457,12 @@ def build_parser() -> agent_exec.JsonArgumentParser:
 
 
 def team_roster(args):
-    from tasks import team
+    from conductor import team
     return team.roster(agent_exec, agent_exec.resolve_project_root(args.project_root))
 
 
 def team_candidates(args):
-    from tasks import team
+    from conductor import team
     requirements = {"role": args.role, "provider": args.provider, "model": args.model,
                     "reasoningEffort": args.reasoning_effort, "fast": args.fast, "workProfile": args.work_profile,
                     "humanApprovalPolicy": args.human_approval_policy, "sandbox": args.sandbox, "domain": args.domain}
@@ -2469,7 +2471,7 @@ def team_candidates(args):
 
 
 def team_history(args):
-    from tasks import team
+    from conductor import team
     return team.history(agent_exec, agent_exec.resolve_project_root(args.project_root), args.agent,
                         workflow_id=args.workflow_id, task_id=args.task_id, parent_agent=args.parent_agent)
 

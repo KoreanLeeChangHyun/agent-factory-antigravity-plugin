@@ -12,7 +12,7 @@ import tempfile
 from adapters.antigravity.control import goal_commands
 from adapters.antigravity.policy import NOTICES, effort_arguments, native_model, permission_arguments, sandbox, validate
 from storage.errors import ContractError
-from tasks import orchestrator_guard
+from hooks import orchestrator_guard
 from storage.files import atomic_write_json, safe_read_json
 from contracts.receipts import result_only_schema
 

@@ -10,8 +10,6 @@ from pathlib import Path
 import re
 import unicodedata
 
-import yaml
-
 from storage import paths
 
 FOLDERS = {'error': 'errors', 'judgment': 'judgment-differences'}
@@ -112,6 +110,9 @@ def body_path(root, record):
 
 
 def frontmatter(path):
+    # YAML is needed only for lesson documents, not runtime startup/worktree checks.
+    import yaml
+
     text = path.read_text(encoding='utf-8')
     parts = text.split('---\n', 2)
     if len(parts) != 3 or parts[0]:
@@ -212,6 +213,8 @@ def recover(root, name, documents_root, atomic):
 
 def prepare(root, record, path, existing_text=None):
     """Return exact body and metadata bytes, retaining independent Markdown edits."""
+    import yaml
+
     texts = {}
     def quoted(value):
         return '\n'.join('> ' + line for line in value.split('\n'))

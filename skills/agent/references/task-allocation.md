@@ -2,6 +2,8 @@
 
 ## 1. Allocation evidence and judgment
 
+### 1.1. Allocation judgment
+
 - Main decomposes independent outcomes with completion evidence; keep strong dependencies/shared
   state with one owner. Only ready, conflict-free work is a parallel candidate. File count,
   elapsed time and performer count are not complexity limits.
@@ -11,8 +13,12 @@
   Independent Verification requires explicit Human request. Only Main dispatches.
   Prefer existing sessions for same-task corrections; explain
   new/reuse choice from continuity, purpose and boundaries, not elapsed time.
-- Include prerequisites, input source/version/time, read/write scope, shared ownership and
-  unit/profile/session reasons in brief Scope. Never claim unconfirmed results or ownership ready.
+- Include prerequisites, read/write scope and shared ownership in brief Scope and input
+  source/version/time in brief References. Keep unit/profile/model/session reasons in Main's run records or allocation
+  evidence, not the brief. Never claim unconfirmed results or ownership ready.
+
+### 1.2. Captured allocation and brief inputs
+
 - With installed `submit.taskAllocation: true`, optionally use `loop.py start --allocation-file
   <run>/allocation.json` for a brief, or `tasks[].allocation` in the existing task list, never both.
   Older runtimes receive prose only; source support does not prove installed capability.
@@ -26,9 +32,13 @@
   when needed and recheck its revision. Retain choice and detail-read reasons in the
   existing task/run evidence, including source/revision and unresolved constraints.
 - Forward a self-contained bounded brief with goal, completion, scope, dependencies,
-  decisions, errors, unresolved issues and exact settings. Reference unrelated task
+  decisions, task-relevant errors, unresolved issues and exact settings. Main's own
+  preparation errors and retries stay in Main's run records. Reference unrelated task
   bodies/logs through their original run instead of copying them. References never
   replace required scope or permission evidence; full originals remain accessible.
+
+### 1.3. Measured comparisons
+
 - For same-input comparisons, `exec.py measure --input <JSON>` reads schemaVersion 1
   cases with id, input, completionCriteria and before/after messages/runStatePaths.
   It launches no model. Static bytes and fixture checks are separate from reported run
@@ -36,20 +46,7 @@
   subsets. Supply sourced quality, detailReads, elapsedSeconds, allocationErrors and
   rework only when observed. Missing values remain null; no unmeasured savings rate.
 
-| Field | Meaning and validation |
-|---|---|
-| schemaVersion | Integer 1. Unknown fields/versions are rejected. |
-| unitReason | Nonempty independent-outcome/completion-evidence reason. |
-| profile | id: explore/workLight/work/scribe/verification; nonempty reason. Records judgment, selects no model. |
-| session | strategy: new/reuse; nonempty reason. Actual session uses the Agent binding. |
-| inputs | Entries: nonempty source, revision, timezone-bearing ISO capturedAt, boolean confirmed. Unresolved revisions may be explicit unknown with confirmed=false. |
-| dependencies | Same evidence fields; optional taskId must be a preceding task in this ordered list. Unknown/self/forward/duplicate IDs fail. External prerequisites use source references without local taskId. |
-| readScope | Nonempty path/source strings; descriptive, grants no permission. |
-| writeScopeReason | Nonempty explanation of the existing brief Scope or requiredFileOperations/documentPaths/workspace. No second write list. |
-| sharedResources | Entries: nonempty resource, evidence; boolean confirmed; ownerTaskId: self or an existing task ID. One resource has one owner. Unknown external ownership remains unresolved evidence. |
-| domain | Optional. Trimmed single-line work-area name (at most 80 characters) such as the product area the outcome belongs to, chosen by Main for this task. Not a profile, role or model. Omit it only when the performer already belongs to a domain; consumers never infer it from titles or history. |
-| taskType | Optional. research, small-change, design-diagnosis or documentation, classified by Main. The runtime then adds `modelRecommendation`; never submit that field. |
-| parallelCandidate | Boolean judgment. True requires confirmed inputs/dependencies/ownership and ownership of declared resources; overlapping existing declared writes fail. |
+### 1.4. Binding lifecycle and limits
 
 - Runtime validates declared consistency, retains allocation in task-list snapshots, loop execution
   binding, run taskBinding and immutable dispatch tuples, and supplies it to Work as evidence.
@@ -65,6 +62,23 @@
   routing or schedule dependencies. Loops stay sequential; Main handles external prerequisites
   and parallel chains. Preserve existing failureClass retries, authority, receipt and Verification.
   A scheduler, learned routing, new UI or framework requires a later scope.
+
+### 1.5. Allocation schema
+
+| Field | Meaning and validation |
+|---|---|
+| schemaVersion | Integer 1. Unknown fields/versions are rejected. |
+| unitReason | Nonempty independent-outcome/completion-evidence reason. |
+| profile | id: explore/workLight/work/scribe/verification; nonempty reason. Records judgment, selects no model. |
+| session | strategy: new/reuse; nonempty reason. Actual session uses the Agent binding. |
+| inputs | Entries: nonempty source, revision, timezone-bearing ISO capturedAt, boolean confirmed. Unresolved revisions may be explicit unknown with confirmed=false. |
+| dependencies | Same evidence fields; optional taskId must be a preceding task in this ordered list. Unknown/self/forward/duplicate IDs fail. External prerequisites use source references without local taskId. |
+| readScope | Nonempty path/source strings; descriptive, grants no permission. |
+| writeScopeReason | Nonempty explanation of the existing brief Scope or requiredFileOperations/documentPaths/workspace. No second write list. |
+| sharedResources | Entries: nonempty resource, evidence; boolean confirmed; ownerTaskId: self or an existing task ID. One resource has one owner. Unknown external ownership remains unresolved evidence. |
+| domain | Optional. Trimmed single-line work-area name (at most 80 characters) such as the product area the outcome belongs to, chosen by Main for this task. Not a profile, role or model. Omit it only when the performer already belongs to a domain; consumers never infer it from titles or history. |
+| taskType | Optional. research, small-change, design-diagnosis or documentation, classified by Main. The runtime then adds `modelRecommendation`; never submit that field. |
+| parallelCandidate | Boolean judgment. True requires confirmed inputs/dependencies/ownership and ownership of declared resources; overlapping existing declared writes fail. |
 
 <a id="project-domains"></a>
 
@@ -101,7 +115,8 @@
 
 ## 3. Model recommendation and provider handoff
 
-- With an allocation `taskType`, pass the supplied modelCatalog as `loop.py start --model-catalog-file`.
+- With installed `submit.modelRecommendation: true`, add the allocation `taskType` and pass
+  the supplied modelCatalog as `loop.py start --model-catalog-file`. A Human-specified model always wins.
   The runtime matches it against the Human's `model-affinity.json` in the project runtime root
   (schemaVersion 1; per task type an optional `profile` and ordered `preferences` of exact IDs or `*`
   patterns) and records `allocation.modelRecommendation`: status, recommended/selected model,
@@ -110,8 +125,13 @@
 - Only detected candidates are chosen; a missing catalog is `recheck-required`. A specified `--work-model`/`--model` or the Human's captured role model is
   kept (`human-specified`, flagged if undetected). Only a single-task loop applies the recommendation;
   task lists record `recommended`. An existing Work session limits candidates to its provider.
+- When a provider's usage limit runs out, every role moves to another provider without asking (Human
+  decision 2026-10-18, message 73404444): new work and the conductor's own turns use the same role's model on
+  a provider with quota left, and a loop stopped with failureClass `quota` continues with
+  `loop.py handoff --actor main --trigger quota` to another provider. Each switch is told to the Human in one line.
 - With installed `submit.providerHandoff: true`, the Human may move a running or stopped loop's Work
-  task: `loop.py handoff --work-agent <owner> --loop-id <id> --to-agent <new> --to-model <model>
+  task; for any other reason Main performs this only after explicit Human approval:
+  `loop.py handoff --work-agent <owner> --loop-id <id> --to-agent <new> --to-model <model>
   --actor human --authorization-reference <ref> --decision-evidence <text> [--reason <text>]`.
   It cancels a live Work run and waits for it to end, writes a bundle (original request, progress,
   changed paths, remaining work and open findings) as the new session's request, reassigns the current

@@ -20,6 +20,8 @@
 
 ## 2. Validate, render and open
 
+### 2.1. Extension editor
+
 - With the matching Agent Factory extension, `*.archify.json`, `*.architecture.json`
   and `*.sequence.json` open directly as a validated diagram. Ordinary `*.json` files
   remain text. The supported `diagram_type` in the content selects the renderer.
@@ -31,6 +33,9 @@
 - The editor receives SVG/CSS from `preview --tool-dir <tool-dir>` via stdin JSON.
   It isolates the SVG in a data image and runs only extension-local UI scripts. The
   standalone HTML's scripts are not injected into chat or the file editor.
+
+### 2.2. Canonical source and output paths
+
 - Store JSON once in a Document package's `assets/`, linked from its `SKILL.md` or reachable
   reference. Preserve readable meaning near the link; follow [Diagrams](diagrams.md#document-assets).
 - Use existing or agreed paths for dependencies. `install --tool-dir <run-or-agreed-runtime-directory>/archify-3.0.1`
@@ -41,19 +46,25 @@
 ```sh
 python3 <plugin-root>/scripts/archify.py install --tool-dir <run-directory>/archify-3.0.1
 python3 <plugin-root>/scripts/archify.py validate --project-root <project-root> --tool-dir <tool-dir> docs/skills/<package>/assets/system.architecture.json
-python3 <plugin-root>/scripts/archify.py render --project-root <project-root> --tool-dir <tool-dir> docs/skills/<package>/assets/system.architecture.json --output docs/artifact/preview/<topic>/architecture.html --open
-python3 <plugin-root>/scripts/archify.py open --project-root <project-root> docs/artifact/preview/<topic>/architecture.html
+python3 <plugin-root>/scripts/archify.py render --project-root <project-root> --tool-dir <tool-dir> docs/skills/<package>/assets/system.architecture.json --output docs/artifact/interactive/<topic>__architecture.html --open
+python3 <plugin-root>/scripts/archify.py open --project-root <project-root> docs/artifact/interactive/<topic>__architecture.html
 ```
 
 - Prepare the output parent using the agreed [Artifacts](artifacts.md) locations. The tool
   does not create project directories. Use a new output filename on rerender.
+
+### 2.3. Validation and rendered output
+
 - `render` calls official `validate` and `deliver --json` on an immutable input snapshot in
   system temporary storage, then exclusively creates the requested HTML. The official delivery
   report describes this staged output; scratch sidecars are not published as final artifact provenance.
 - The response includes the original input path/hash, HTML path/hash, file URI, pinned version/commit,
   and official validation/delivery diagnostics. Link the generated artifact beside the JSON source.
 - `meta.output` remains required and officially validated, but does not select the public write
-  destination. Only `--output` selects a new `docs/artifact/<category>/<topic>/*.html` file.
+  destination. Only `--output` selects a new `docs/artifact/<domain>/<name>.html` file.
+
+### 2.4. Open and delivery
+
 - `--open` or `open` uses the OS browser (`xdg-open`, macOS `open`, Windows file association),
   with an argument array and no shell. It runs on the machine hosting the CLI/files.
 - Existing Agent Factory local Markdown links open files in VS Code. For interactive HTML,
@@ -67,6 +78,9 @@ python3 <plugin-root>/scripts/archify.py open --project-root <project-root> docs
 - Invalid JSON/schema and unsupported types fail before publishing HTML. The input remains unchanged.
 - In architecture grid layouts, give nodes explicit `row`/`col` or `pos`; omitted coordinates
   can overlap nodes and cause the pinned renderer to report `internal/unclassified` during routing.
+- The pinned renderer also reports `internal/unclassified` for a labelled connection between
+  vertically stacked grid nodes; leave such vertical connections unlabelled and carry the
+  meaning in node sublabels or nearby text.
 - Missing renderer: run `install` into a new agreed directory. Integrity mismatch: inspect the
   changed installation and prepare a new pinned directory; the tool never repairs it in place.
 - Missing or older Node.js: provide Node.js >=18 on PATH. No provider configuration is changed.

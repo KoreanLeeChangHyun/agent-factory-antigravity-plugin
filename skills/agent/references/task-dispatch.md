@@ -1,6 +1,9 @@
 # Task Binding and Dispatch
 
-- Contracts Main follows when announcing, binding, submitting and assigning managed tasks.
+- Main uses the section matching an explicit binding, announcement, ordered workflow,
+  preparation context or Work Unit. Brief entry and branch selection live in
+  [dispatch start](dispatch-start.md#dispatch-branch); a brief with Work isolation still
+  requires [its workspace section](#task-workspaces). These functions do not select a role.
 
 <a id="task-binding"></a>
 
@@ -96,13 +99,18 @@
 
 ## 3. Supplied preparation context
 
+### 3.1. Document and Git preparation context
+
 - For an approved document-dependent task, capture its retrieval requirements in the task
   entry's `documentContext`, including mandatory sources independently of search ranking.
   The runtime prepares canonical evidence before the existing provider turn; see the
-  [Document retrieval contract](../../document/references/host-sync.md#local-document-catalog-and-search)
+  [Document retrieval contract](../../document/references/catalog-search.md#request-context)
   for fields, scope boundaries, missing evidence and per-run metrics. This does not authorize the task.
 
 - Use the host-supplied Git change paths, collection time and instruction sources when available.
+
+### 3.2. Reuse, freshness and required reads
+
 - Main consolidates relevant conversation and scope and includes the relevant snapshot with its
   provenance in the child request. Work consumes that context.
 - Do not repeat Git status or reread identical supplied instructions merely for preparation;
@@ -110,6 +118,9 @@
 - Unavailable Git data is not a clean tree.
 - Read any required instructions that have not been supplied, and preserve all execution and
   authorization checks.
+
+### 3.3. Compatibility and revisions
+
 - If an older runtime rejects submission without hashes, report the compatibility limitation
   instead of adding a manual hash step.
 - Retries and loop revisions retain the accepted immutable request binding.
@@ -168,58 +179,11 @@
 
 ## 6. Captured task Work Units
 
-- Work isolation is the Human's toggle, captured on the Main run as `workIsolation`. Off keeps the
-  shared checkout. On (runtime advertising `workIsolation`), Main supplies `loop.py start
-  --workspace-file FILE` for every brief or task: `code` for changes, `read-only` for research
-  and questions; `shared` and a missing plan are rejected. Loops inherit the toggle.
-- Store the input in the Main run directory. A code plan contains `mode: code` and
-  `repositories`: exact `path`, optional `targetBranch`, and nonempty `checks` arrays of executable
-  argv arrays from project rules. Derive repositories from the brief's target paths; nested
-  repositories need separate tasks. Under isolation an omitted target is the current branch.
-- Select only repositories owned by the task. Use the selected Work Unit's captured target when
-  present, otherwise inspect the actual repository default branch. Missing repository/semantic
-  decisions require clarification; do not guess targets or select every repository.
-- Ordered task lists may instead carry each task's `workspace` plan. The accepted private list
-  retains it, and each task acquires its own space before dispatch. Explicit `shared` and
-  `read-only` modes have no repositories or automatic Git operations.
-- The runtime prepares repository-specific branches under the project's managed `worktrees/`,
-  relocates Work/Verification CWD and workspace-write roots, and retains original projectRoot,
-  session/run/receipt identity. Source dirty/untracked changes remain excluded and visible.
-- Revisions and recovery reuse the accepted task workspace. A duplicate code-task start with
-  the same Agent/request/options returns the accepted loop; different options are rejected.
-  Never retrofit an accepted loop, ignore an isolation prohibition, or isolate conversation,
-  read-only research, standalone Verification or planning-only work.
-- Work and Verification never commit. After Work's actual own checks and the requested
-  Verification pass or recorded Human skip, runtime commits receipt-bound changes and prepares
-  a checked ordinary two-parent target merge. Integration locks serialize each repository.
-  Latest-target checks precede the target update; external updates require rechecking.
-- An active competing checkout owner or integration lock keeps the loop `active` in
-  `integrating`, with `integrationWait` evidence. The driver retries the same completed
-  Work and receipt, without re-dispatch. New lifecycle-versioned loops preserve this wait
-  across restarts without an arbitrary observation limit; historical loops keep their captured budget.
-  Only the exact accepted parent Main is
-  exempt on the target; another Main, queued runs and uncertain process ownership block.
-  Expired runs are ignored only with positive empty containment or dead identity evidence.
-  Historical busy stops can be reconciled
-  in their original loop. Project bindings, provider failures and Human decisions remain enforced.
-- Conflicts remain isolated. Runtime sends exact files/base/target and Git-stage instructions
-  to the same Work session. Work stages justified resolutions and rechecks without committing.
-  Requested Verification runs again. Without isolation, revision limits and unchanged conflict
-  stages stop for concrete Human decisions. Never force ours/theirs, rewrite unrelated files or weaken tests.
-- Under isolation conflicts never wait for a Human. Unchanged stages, the revision limit, a dirty
-  target or another unmergeable outcome preserve branches and paths. New loops report
-  `runtime-error` and `completion.integration=preserved|partial`; historical
-  `completed/integration_preserved` records remain unchanged. Failed integration checks
-  send their exact evidence back to Work for repair; unchanged failure evidence is preserved
-  instead of repeatedly spending model tokens on the same repair.
-- Failure, cancellation, dirty/active targets and failed checks preserve Work Units without
-  reporting integration complete. Multi-repository outcomes are partial and resumable, not atomic.
-  Cleanup retains unpreserved/ignored files and active runs; it removes only proven merged units.
-- Inspect `taskWorkspaces` in loop status/progress for paths, branches, base/result/merge commits,
-  check evidence, conflict/error and cleanup state. Chat/run/receipt history remains accessible.
-  Supply exact integration commits for rollback; execute no revert, push, deploy or history rewrite.
+- For this operation, read [Captured task Work Units](task-workspaces.md#task-workspaces) and apply its complete contract.
 
-### Durable continuation
+<a id="durable-continuation"></a>
+
+### 6.1. Durable continuation
 
 - New loops snapshot linked local guidance and prepare lockfile-bound npm dependencies before
   model dispatch. `preflight` exposes the exact operation and output path; failed preparation

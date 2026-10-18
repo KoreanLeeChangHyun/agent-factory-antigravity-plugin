@@ -56,7 +56,7 @@ class Workflows:
             raise ContractError('verification_independence', 'A distinct reserved verifier is required')
         for selected in (session, verifier):
             area = selected['area']
-            from tasks import domains
+            from conductor import domains
             domains.assign_subdomain(self.path.parent, selected['agentId'], area['domainId'], area['subdomainId'], 'ai', 'queue-dispatch:' + request['run']['dispatchId'])
         document_id = 'conductor-' + hashlib.sha256(task['id'].encode()).hexdigest()[:32]
         body = self.path.with_name(request['run']['dispatchId'] + '.workflow-request.md')

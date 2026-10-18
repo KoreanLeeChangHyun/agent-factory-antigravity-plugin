@@ -21,8 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from execution import handoff
-from tasks import conductor_intents as intents
-from tasks import conductor_pool, conductor_responsibility, conductor_roles
+from conductor import intents
+from conductor import performers as conductor_performers, pool as conductor_pool, responsibility as conductor_responsibility, roles as conductor_roles
 from storage import paths
 from storage.errors import ContractError
 
@@ -33,17 +33,25 @@ CLASSES = ("control", "conversation", "lifecycle", "progress")
 WEIGHTS = {"control": 16, "conversation": 16, "lifecycle": 32, "progress": 256}
 # Queue depth reported to producers as a slow-down signal; nothing is rejected.
 BACKPRESSURE_DEPTH = {"control": 64, "conversation": 64, "lifecycle": 512, "progress": 2048}
-SUBSCRIPTIONS = ("conductor", "executor", "ui")
+# memory applies memory-update intents after the ledger commit; it is replayable like every subscription.
+SUBSCRIPTIONS = ("conductor", "executor", "ui", "memory")
 POISON_ATTEMPTS = 3
 OPEN_REQUEST = ("accepted", "planning", "delegated", "awaiting-synthesis", "cancelling", "decomposed", "queued-for-instance")
 DELEGATION_TERMINAL = ("completed", "failed", "cancelled")
 ATTEMPT_TERMINAL = ("completed", "failed", "cancelled", "lost")
+# Human controls for employment, resolver, skills, memory and undecided policy (performer ledger).
+PERFORMER_ACTIONS = frozenset({"hire-performer", "reconfigure-performer", "replace-performer", "retire-performer",
+                               "escalate-resolver", "configure-resolver", "configure-chat-resolver", "configure-performer-policy", "register-skill",
+                               "approve-skill", "revoke-skill", "write-memory", "approve-memory", "propose-skill"})
 ROUTES = {
     "delegation-created": ("executor", "ui"), "delegation-unblocked": ("executor", "ui"), "delegation-approved": ("executor", "ui"),
     "attempt-retry": ("executor", "ui"), "worker-answer": ("executor", "ui"), "workspace-action": ("executor", "ui"), "delegation-cancel-requested": ("executor", "ui"),
     "delegation-completed": ("conductor", "ui"), "delegation-failed": ("conductor", "ui"),
     "delegation-cancelled": ("conductor", "ui"), "worker-question": ("conductor", "ui"),
     "request-cancelled": ("conductor", "ui"),
+    "resolver-engaged": ("executor", "ui"), "memory-update-intent": ("memory",),
+    # A result whose idempotency key repeats with different content is a contradiction for the conductor to judge.
+    "result-conflict": ("conductor", "ui"),
 }
 
 
@@ -130,6 +138,11 @@ CREATE TABLE IF NOT EXISTS operator_effects(id TEXT PRIMARY KEY, payload TEXT NO
 CREATE TABLE IF NOT EXISTS attempt_waits(attempt_id TEXT PRIMARY KEY, reason TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS ops(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, detail TEXT NOT NULL,
   at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS request_revisions(request_id TEXT NOT NULL, revision INTEGER NOT NULL, kind TEXT NOT NULL,
+  text TEXT NOT NULL, input_id TEXT, source TEXT NOT NULL, created_at REAL NOT NULL, PRIMARY KEY(request_id, revision));
+CREATE TABLE IF NOT EXISTS input_conflicts(id INTEGER PRIMARY KEY AUTOINCREMENT, dedup_key TEXT NOT NULL,
+  input_id TEXT NOT NULL, chat_id TEXT NOT NULL, class TEXT NOT NULL, payload_hash TEXT NOT NULL, payload TEXT NOT NULL,
+  received_at REAL NOT NULL, UNIQUE(dedup_key, payload_hash));
 """
 
 
@@ -144,8 +157,10 @@ class Store:
         self.pool = conductor_pool.Pool(self)
         self.responsibility = conductor_responsibility.Responsibility(self)
         self.roles = conductor_roles.Roles(self)
+        self.performers = conductor_performers.Performers(self)
         with self.tx() as c:
-            for statement in filter(str.strip, (SCHEMA + conductor_pool.SCHEMA + conductor_responsibility.SCHEMA + conductor_roles.SCHEMA).split(";")):
+            for statement in filter(str.strip, (SCHEMA + conductor_pool.SCHEMA + conductor_responsibility.SCHEMA + conductor_roles.SCHEMA
+                                                + conductor_performers.SCHEMA).split(";")):
                 c.execute(statement)
             c.execute("INSERT OR IGNORE INTO meta(key, value) VALUES('schemaVersion', ?)", (str(SCHEMA_VERSION),))
             for name in SUBSCRIPTIONS:
@@ -244,7 +259,7 @@ class Store:
             require(payload.get("relation") in (None, "new", "followup"), "relation_invalid", "relation is new or followup")
             kind = "message"
         elif cls == "control":
-            require(payload.get("action") in {"cancel", "approve", "resolve-input", "reassign", "answer-worker", "integrate-workspace", "cleanup-workspace", "resolve-area", "confirm-decision", "answer-question", "hire-role", "configure-area", "configure-role", "accept-area-task", "register-required", "exclude-required", "create-child"}, "control_action",
+            require(payload.get("action") in {"cancel", "approve", "resolve-input", "reassign", "answer-worker", "integrate-workspace", "cleanup-workspace", "resolve-area", "confirm-decision", "answer-question", "hire-role", "configure-area", "configure-role", "accept-area-task", "register-required", "exclude-required", "create-child", "revise"} | PERFORMER_ACTIONS, "control_action",
                     "Unknown control action")
             require(payload.get("commandId"), "command_id", "commandId required")
             key, kind = "chat:%s:control:%s" % (chat_id, payload["commandId"]), payload["action"]
@@ -256,6 +271,18 @@ class Store:
                     "worker_event", "Unknown lifecycle kind")
             key, kind = "attempt:%s:%s" % (payload["attemptId"], payload["workerEventId"]), payload["kind"]
         value_hash = digest(payload)
+        conflict = None
+        with self.tx() as c:
+            self.policy(c, chat_id)
+            old = self.row(c, "SELECT input_id, payload_hash, accepted_at FROM inbox WHERE dedup_key=?", key)
+            if old and old["payload_hash"] != value_hash:
+                conflict = self.record_conflict(c, chat_id, cls, key, old["input_id"], payload, value_hash)
+                if cls in ("lifecycle", "progress"):
+                    # The first fact stays current; the contradiction is kept and goes to the conductor, never hidden.
+                    return {"disposition": "conflict", "inputId": old["input_id"], "conflictId": conflict,
+                            "acceptedAt": iso(old["accepted_at"])}
+        if conflict is not None:
+            raise ContractError("input_conflict", "Duplicate key with different content")
         with self.tx() as c:
             self.policy(c, chat_id)
             old = self.row(c, "SELECT input_id, payload_hash, accepted_at FROM inbox WHERE dedup_key=?", key)
@@ -280,6 +307,68 @@ class Store:
             depth = c.execute("SELECT COUNT(*) FROM inputs WHERE status='pending' AND class=?", (cls,)).fetchone()[0]
         return {"disposition": "accepted", "inputId": iid, "acceptedAt": iso(now), "class": cls,
                 "queueDepth": depth, "backpressure": depth >= BACKPRESSURE_DEPTH[cls]}
+
+    def record_conflict(self, c, chat_id, cls, key, input_id, payload, value_hash):
+        """Same idempotency key, different content: keep both and make the contradiction visible once."""
+        cur = c.execute("INSERT OR IGNORE INTO input_conflicts(dedup_key, input_id, chat_id, class, payload_hash, payload,"
+                        " received_at) VALUES(?,?,?,?,?,?,?)", (key, input_id, chat_id, cls, value_hash,
+                                                                json.dumps(payload, ensure_ascii=False), self.clock()))
+        row = self.row(c, "SELECT id FROM input_conflicts WHERE dedup_key=? AND payload_hash=?", key, value_hash)
+        if cur.rowcount:
+            detail = {"conflictId": row["id"], "inputId": input_id, "class": cls, "kind": payload.get("kind") or payload.get("action"),
+                      "clientMessageId": payload.get("clientMessageId"), "commandId": payload.get("commandId")}
+            d = self.row(c, "SELECT * FROM delegations WHERE id=?", payload.get("delegationId")) if cls == "lifecycle" else None
+            if d:
+                self.event(c, chat_id, "result-conflict", {**detail, "attemptId": payload.get("attemptId"),
+                                                           "workerEventId": payload.get("workerEventId"),
+                                                           "delegation": self.public_delegation(c, d)}, key="conflict:%s" % row["id"])
+            else:
+                self.event(c, chat_id, "input-conflict", detail, key="conflict:%s" % row["id"])
+            self.op(c, "input-conflict", conflictId=row["id"], inputId=input_id, inputClass=cls)
+        return row["id"]
+
+    # -- original request, revision and correlation -----------------------------------
+    def root_request(self, c, request_id):
+        req, seen = self.row(c, "SELECT * FROM requests WHERE id=?", request_id), set()
+        while req and req["parent_id"] and req["id"] not in seen:
+            seen.add(req["id"])
+            req = self.row(c, "SELECT * FROM requests WHERE id=?", req["parent_id"]) or req
+        return req
+
+    def revision(self, c, request_id):
+        """Current revision of the original request; requests recorded before revisions read as revision 1."""
+        root = self.root_request(c, request_id)
+        return c.execute("SELECT MAX(revision) FROM request_revisions WHERE request_id=?", (root["id"],)).fetchone()[0] or 1
+
+    def record_revision(self, c, request_id, kind, text, source, input_id=None):
+        latest = c.execute("SELECT MAX(revision) FROM request_revisions WHERE request_id=?", (request_id,)).fetchone()[0]
+        # A legacy request without a recorded original keeps revision 1 as its original input.
+        revision = 1 if kind == "accepted" else (latest or 1) + 1
+        c.execute("INSERT INTO request_revisions(request_id, revision, kind, text, input_id, source, created_at)"
+                  " VALUES(?,?,?,?,?,?,?)", (request_id, revision, kind, text, input_id, source, self.clock()))
+        return revision
+
+    def revisions(self, c, request_id):
+        return [{"revision": r["revision"], "kind": r["kind"], "text": r["text"], "inputId": r["input_id"],
+                 "source": r["source"], "createdAt": r["created_at"]}
+                for r in c.execute("SELECT * FROM request_revisions WHERE request_id=? ORDER BY revision", (request_id,))]
+
+    def correlation(self, c, req, token, delegation_id):
+        """Identifiers that trace an assignment back to the accepted user turn and the revision it serves."""
+        root = self.root_request(c, req["id"])
+        turn = self.row(c, "SELECT id FROM inputs WHERE class IN ('conversation','control') AND request_id IN (?,?)"
+                           " AND status IN ('routed','processed') ORDER BY seq DESC LIMIT 1", root["id"], req["id"])
+        return {"rootTaskId": root["id"], "turnId": turn["id"] if turn else None, "revision": self.revision(c, req["id"]),
+                "subtaskId": req["id"] if req["parent_id"] else delegation_id, "assignmentId": delegation_id,
+                "conductorSessionId": "%s-%s" % (token["conductorId"], token["slot"]), "conductorTurnId": token["turnId"]}
+
+    def result_admission(self, c, d):
+        """Whether this delegation's result may change the current answer; a late result stays recorded either way."""
+        spec = json.loads(d["spec"])
+        revision = (spec.get("correlation") or {}).get("revision", 1)
+        current = self.revision(c, d["request_id"])
+        reason = "stale-revision" if revision < current else "cancel-requested" if d["cancel_requested"] else None
+        return {"current": reason is None, "reason": reason, "revision": revision, "currentRevision": current}
 
     # -- router ---------------------------------------------------------------
     def route_batch(self, weights=None):
@@ -309,7 +398,7 @@ class Store:
                 handler = {"conversation": self.route_conversation, "control": self.route_control,
                            "lifecycle": self.route_lifecycle}[inp["class"]]
                 outcome = handler(c, inp, payload) or {}
-                if inp['class'] == 'control' and payload.get('action') in ('hire-role','configure-area','configure-role','accept-area-task','create-child'):
+                if inp['class'] == 'control' and payload.get('action') in ('hire-role','configure-area','configure-role','accept-area-task','create-child', *PERFORMER_ACTIONS):
                     self.event(c, inp['chat_id'], 'role-pool-control-result', {'commandId': payload['commandId'], 'outcome': outcome}, key='role-control:' + payload['commandId'])
                 c.execute("UPDATE inputs SET status=?, routed_at=?, reason=?, request_id=COALESCE(?, request_id),"
                           " conductor_id=COALESCE(?, conductor_id) WHERE id=?",
@@ -404,6 +493,8 @@ class Store:
         c.execute("INSERT INTO requests(id, chat_id, conductor_id, owner_epoch, title, status, version, received_at,"
                   " created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
                   (rid, chat, conductor["id"] if conductor else "", 1, title, "accepted" if conductor else "queued-for-instance", 1, inp["accepted_at"], now, now))
+        self.record_revision(c, rid, "accepted", text, "input:" + inp["id"] if inp.get("id") else inp.get("areaSource") or "request:" + rid,
+                             input_id=inp.get("id"))
         if area:
             self.pool.set_area(c, "request", rid, area)
             self.pool.decide(c, rid, "assignment", area, inp.get("areaSource") or "input:" + str(inp.get("id", rid)), "declared" if str(inp.get("areaSource", "")).startswith("turn:") else "human", "area")
@@ -605,7 +696,7 @@ class Store:
                                                    "requestId": p.get("requestId")}, key="resolved:" + held["id"])
             return {"status": "processed", "reason": "resolved"}
         if action == 'create-child':
-            from tasks import domains
+            from conductor import domains
             result = domains.subdomain(self.path.parent, p.get('areaId'), p.get('name'), 'human', 'human-control:' + p['commandId'], p.get('expectedRevision'))
             self.event(c, chat, 'role-pools-state', self.roles.projection(c))
             return result
@@ -617,9 +708,17 @@ class Store:
             self.deliver_user(c, req, {'instructionId': instruction_id, 'text': p['text'], 'clientMessageId': p['commandId']}, 'human-control:' + p['commandId'])
             self.event(c, chat, 'role-pools-state', self.roles.projection(c))
             return {'requestId': req['id']}
+        if action in PERFORMER_ACTIONS:
+            result = self.performer_control(c, chat, action, p)
+            self.event(c, chat, 'performers-state', self.performers.projection(c))
+            return result
         if action in ('hire-role', 'configure-area', 'configure-role'):
             if action == 'hire-role':
                 result = self.roles.hire(c, p.get('area'), p.get('profile'), p.get('settings'), 'human-control:' + p['commandId'])
+                # The Human's explicit hire in a domain is the employment agreement for its one logical performer.
+                result['employment'] = self.performers.hire(c, self.pool.area(p.get('area'))['domainId'], 'human',
+                                                            'human-control:' + p['commandId'])
+                self.event(c, chat, 'performers-state', self.performers.projection(c))
             else:
                 self.roles.configure(c, p.get('areaId'), 'human-control:' + p['commandId'], route=p.get('route'), profile=p.get('profile'), settings=p.get('settings'))
                 result = {'configured': True}
@@ -636,6 +735,8 @@ class Store:
             return self.responsibility.register(c, req['id'], p.get('tasks'), 'human-control:' + p['commandId'])
         expected = p.get("expectedVersion")
         require(type(expected) is int, "version_required", "Control needs the version the Human saw")
+        if action == "revise":
+            return self.revise(c, inp, p, reject)
         if action in ('confirm-decision', 'answer-question'):
             req = self.row(c, 'SELECT * FROM requests WHERE id=? AND chat_id=?', p.get('requestId'), chat)
             require(req and req['version'] == expected, 'version_conflict', 'Use the current request version')
@@ -716,6 +817,85 @@ class Store:
         self.settle_request(c, req["id"])
         return {"status": "processed", "requestId": req["id"]}
 
+    def revise(self, c, inp, p, reject):
+        """Explicit change of direction: a new revision of the original request, never an implicit cancel.
+
+        The original and every earlier revision stay recorded. Unstarted assignments of earlier revisions are
+        cancelled; running ones keep running (their interruption guarantee is an open product policy) and their
+        late results are recorded without changing the current answer.
+        """
+        chat = inp["chat_id"]
+        req = self.row(c, "SELECT * FROM requests WHERE id=? AND chat_id=?", p.get("requestId"), chat)
+        if not req:
+            return reject("unknown-target")
+        require(isinstance(p.get("text"), str) and p["text"].strip(), "message_empty", "Revision text required")
+        root = self.root_request(c, req["id"])
+        if root["id"] != req["id"]:
+            return reject("revise-root-only", requestId=root["id"])
+        if req["status"] not in OPEN_REQUEST or req["status"] == "cancelling":
+            return reject("already-terminal", status=req["status"], version=req["version"])
+        if req["version"] != p["expectedVersion"]:
+            return reject("version-conflict", status=req["status"], version=req["version"])
+        source = "control:" + p["commandId"]
+        revision = self.record_revision(c, req["id"], "revision", p["text"], source, input_id=inp["id"])
+        stopped = []
+        family = [req["id"]] + [r["id"] for r in c.execute("SELECT id FROM requests WHERE parent_id=?", (req["id"],))]
+        # Unstarted: the current attempt has not begun (waiting for approval, admission or a worker start).
+        for d in [dict(r) for r in c.execute("SELECT d.* FROM delegations d JOIN attempts a ON a.id=d.attempt_id"
+                                             " WHERE d.request_id IN (%s) AND d.status IN ('awaiting-approval','ready','dispatched')"
+                                             " AND a.status='pending'" % ",".join("?" * len(family)), family)]:
+            stopped.append(self.cancel_delegation(c, d, p["commandId"])["id"])
+        self.event(c, chat, "request-revised", {"requestId": req["id"], "revision": revision, "inputId": inp["id"],
+                                                "commandId": p["commandId"], "stoppedDelegations": stopped,
+                                                "revisions": self.revisions(c, req["id"])}, key="revised:" + inp["id"])
+        instruction_id = self.responsibility.instruction(c, req["id"], p["text"], source) if self.policy(c, chat)["conductor"] == "managed" else None
+        self.deliver_user(c, req, {"instructionId": instruction_id, "inputId": inp["id"], "text": p["text"], "revision": revision,
+                                   "revisionKind": "revision", "supersedesRevision": revision - 1, "stoppedDelegations": stopped},
+                          source, mid="mb-" + inp["id"])
+        self.settle_request(c, req["id"])
+        return {"status": "processed", "requestId": req["id"], "revision": revision}
+
+    def performer_control(self, c, chat, action, p):
+        """Human control commands on the performer ledger; every change names its control command as evidence."""
+        source = 'human-control:' + p['commandId']
+        performers = self.performers
+        if action == 'hire-performer':
+            return performers.hire(c, p.get('domainId'), 'human', source, name=p.get('name'), authority=p.get('authority'),
+                                   skill_scope=p.get('skillScope'))
+        if action == 'reconfigure-performer':
+            return performers.reconfigure(c, p.get('domainId'), 'human', source, authority=p.get('authority'),
+                                          skill_scope=p.get('skillScope'))
+        if action == 'replace-performer':
+            return performers.replace(c, p.get('domainId'), 'human', source, name=p.get('name'))
+        if action == 'retire-performer':
+            return performers.retire(c, p.get('domainId'), 'human', source)
+        if action == 'configure-performer-policy':
+            return {'policy': performers.configure(c, p.get('policy'), 'human', source)}
+        if action == 'configure-resolver':
+            # An explicit Human selection only; the runtime never picks a resolver model.
+            self.roles.configure(c, p.get('areaId'), source, profile='resolver', settings=p.get('settings'))
+            return {'configured': True, 'areaId': p.get('areaId')}
+        if action == 'configure-chat-resolver':
+            return performers.configure_chat_resolver(c, chat, p.get('settings'), source)
+        if action == 'escalate-resolver':
+            d = self.row(c, 'SELECT * FROM delegations WHERE id=? AND chat_id=?', p.get('delegationId'), chat)
+            require(d is not None, 'delegation_unknown', 'Select the exact task')
+            require(d['version'] == p.get('expectedVersion'), 'version_conflict', 'Engage the resolver on the task version you saw')
+            return performers.escalate(c, d, p.get('reason') or 'human-request', 'human', source)
+        if action == 'register-skill':
+            return performers.register_skill(c, p.get('skillId'), p.get('layer'), p.get('scopeId'), p.get('sourceRef'),
+                                             p.get('contentHash'), 'human', source)
+        if action == 'approve-skill':
+            return performers.approve_skill(c, p.get('skillRevisionId'), 'human', source)
+        if action == 'revoke-skill':
+            return performers.revoke_skill(c, p.get('skillRevisionId'), 'human', source, p.get('reason'))
+        if action == 'propose-skill':
+            return performers.propose_skill(c, p.get('entryId'), p.get('skillId'), 'human', source)
+        if action == 'approve-memory':
+            return performers.approve_memory(c, p.get('entryId'), 'human', source)
+        entry = {**(p.get('entry') or {}), 'sourceRef': (p.get('entry') or {}).get('sourceRef') or source, 'writer': 'human'}
+        return {'entryId': performers.write_memory(c, chat, entry, {'kind': 'human'}, key=source)}
+
     def cancel_delegation(self, c, d, command_id):
         if d["status"] in ("awaiting-approval", "awaiting-answer"):
             # Approval never started; an awaiting-answer worker already confirmed process exit.
@@ -776,6 +956,14 @@ class Store:
         require(d and a and a["delegation_id"] == d["id"], "attempt_unknown", "Event names an unknown attempt")
         kind, now = p["kind"], self.clock()
         status = {"started": "running", "completed": "completed", "failed": "failed", "cancelled": "cancelled"}.get(kind)
+        fenced = self.performers.fence_event(c, d, a, p) if a["id"] == d["attempt_id"] else None
+        if fenced:
+            # A lost lease or an older owner epoch keeps its record but never decides the attempt or task result.
+            self.event(c, d["chat_id"], "attempt-late-event", {"delegationId": d["id"], "attemptId": a["id"],
+                                                               "currentAttemptId": d["attempt_id"], "kind": kind,
+                                                               "reason": fenced})
+            self.op(c, "late-attempt-event", delegationId=d["id"], attemptId=a["id"], eventKind=kind, reason=fenced)
+            return {"status": "processed", "reason": fenced, "requestId": d["request_id"]}
         if status and a["status"] not in ATTEMPT_TERMINAL:
             c.execute("UPDATE attempts SET status=?, started_at=COALESCE(started_at, ?), ended_at=?, error=?, updated_at=?"
                       " WHERE id=?", (status, now, now if status in ATTEMPT_TERMINAL else None,
@@ -788,6 +976,7 @@ class Store:
             return {"status": "processed", "reason": "stale-attempt", "requestId": d["request_id"]}
         if d["status"] in DELEGATION_TERMINAL:
             return {"status": "processed", "reason": "already-terminal", "requestId": d["request_id"]}
+        self.performers.touch(c, a["id"])
         if kind == "started":
             if d["status"] in ("ready", "dispatched"):
                 d = self.set_delegation(c, d, "running")
@@ -819,16 +1008,28 @@ class Store:
                 aid = ident("att")
                 c.execute("INSERT INTO attempts(id, delegation_id, number, status, backend, created_at, updated_at)"
                           " VALUES(?,?,?,?,?,?,?)", (aid, d["id"], d["attempt_count"] + 1, "pending", a["backend"], now, now))
+                previous = self.performers.binding(c, a["id"])
+                self.performers.bind(c, d, aid, tier=previous["tier"] if previous else "expert",
+                                     not_before=self.performers.retry_attempt(c, d, d["attempt_count"] + 1),
+                                     handoff_id=previous["handoff_id"] if previous else None)
                 d = self.set_delegation(c, d, "dispatched", attempt_id=aid, attempt_count=d["attempt_count"] + 1,
                                         error=json.dumps(error, ensure_ascii=False))
                 self.event(c, d["chat_id"], "attempt-retry", {"delegation": self.public_delegation(c, d),
                                                               "previousAttemptId": a["id"], "error": error})
+            elif self.performers.exhausted(c, d, self.row(c, "SELECT * FROM attempts WHERE id=?", a["id"]), error):
+                self.pool.release_worker(c, a["id"])
+                self.performers.settle(c, d, a, "failed-escalated")
+                self.settle_request(c, d["request_id"])
+                return {"status": "processed", "reason": "resolver-engaged", "requestId": d["request_id"]}
             else:
                 d = self.set_delegation(c, d, "failed", error=json.dumps(error, ensure_ascii=False))
                 self.event(c, d["chat_id"], "delegation-failed", {"delegation": self.public_delegation(c, d)})
+                if error.get("retryable") and not d["cancel_requested"]:
+                    self.performers.dead_letter(c, "delegation", d["id"], "retries-exhausted", {"attemptId": a["id"], "error": error})
         if kind in ('completed', 'failed', 'cancelled'):
             self.close_questions(c, d['request_id'], 'closed-' + kind, delegation_id=d['id'])
             self.pool.release_worker(c, a['id'])
+            self.performers.settle(c, d, a, kind if d['attempt_id'] == a['id'] else 'superseded')
         self.settle_request(c, d["request_id"])
         return {"status": "processed", "requestId": d["request_id"]}
 
@@ -859,6 +1060,7 @@ class Store:
                         progress.update(completed=p["completed"], total=p["total"])  # numeric only when measured
                     c.execute("UPDATE attempts SET progress=?, updated_at=? WHERE id=?",
                               (json.dumps(progress, ensure_ascii=False), now, a["id"]))
+                    self.performers.touch(c, a["id"])
                     self.event(c, d["chat_id"], "attempt-progress", {"delegationId": d["id"], "attemptId": a["id"],
                                                                      "progress": progress})
                 c.execute("UPDATE inputs SET status='processed', routed_at=?, reason=? WHERE id=?", (now, reason, row["id"]))
@@ -959,7 +1161,8 @@ class Store:
                     "SELECT d.subscription, d.event_seq AS eventSeq, d.failures, d.last_error AS lastError, e.type"
                     " FROM deliveries d JOIN events e ON e.seq=d.event_seq WHERE d.status='quarantined' ORDER BY d.event_seq")],
                 "inputs": [dict(r) for r in c.execute(
-                    "SELECT id, chat_id AS chatId, class, kind, failures, reason FROM inputs WHERE status='quarantined'")]}
+                    "SELECT id, chat_id AS chatId, class, kind, failures, reason FROM inputs WHERE status='quarantined'")],
+                "deadLetters": self.performers.dead_letters(c)}
 
     def conductor_handler(self, c, event):
         """Results return to the request's current owner, looked up at delivery time."""
@@ -970,7 +1173,13 @@ class Store:
         if not req:
             return None
         kind = "request-cancelled" if event["type"] == "request-cancelled" else (
-            "worker-question" if event["type"] == "worker-question" else "delegation-result")
+            "worker-question" if event["type"] == "worker-question" else
+            "result-conflict" if event["type"] == "result-conflict" else "delegation-result")
+        if event["type"] in ("delegation-completed", "delegation-failed") and delegation.get("id"):
+            current = self.row(c, "SELECT * FROM delegations WHERE id=?", delegation["id"])
+            admission = self.result_admission(c, current) if current else None
+            if admission and not admission["current"]:
+                kind, p = "late-result", {**p, "admission": admission}
         self.enqueue(c, req["conductor_id"], req["id"], kind, {"eventType": event["type"], **p},
                      "event:" + event["id"], mid="mb-" + event["id"])
         return None
@@ -987,8 +1196,10 @@ class Store:
             if not items:
                 return None
             member = self.row(c, 'SELECT * FROM pool_members WHERE id=?', conductor_id)
-            if member and member['state'] != 'busy':
-                reason = self.pool.room(c, 'conductor', json.loads(member['area']))
+            if member:
+                # Every turn is admitted against the concurrent-turn limit, including turns of an instance that already
+                # owns open requests; the instance keeps its mailbox and simply starts at the next free slot.
+                reason = self.pool.room(c, 'conductor', json.loads(member['area']), excluding=conductor_id)
                 if reason:
                     old = self.row(c, 'SELECT reason FROM instance_waits WHERE conductor_id=?', conductor_id)
                     if not old or old['reason'] != reason:
@@ -996,6 +1207,8 @@ class Store:
                         self.event(c, con['chat_id'], 'instance-waiting', {'conductor': self.public_conductor(con)})
                     return None
                 c.execute("UPDATE pool_members SET state='busy',last_used=? WHERE id=?", (self.clock(), conductor_id))
+                if old_wait := self.row(c, 'SELECT reason FROM instance_waits WHERE conductor_id=?', conductor_id):
+                    self.op(c, 'conductor-turn-admitted', conductorId=conductor_id, waited=old_wait['reason'])
             c.execute('DELETE FROM instance_waits WHERE conductor_id=?', (conductor_id,))
             tid, now = ident("turn"), self.clock()
             state = self.handoff_update(c, conductor_id, lambda s: handoff.transition(s, {
@@ -1180,6 +1393,9 @@ class Store:
                                 'verification_open', 'Final answer waits for an exact validated Verification receipt or recorded Human skip')
             if req["first_response_at"] is None:
                 c.execute("UPDATE requests SET first_response_at=? WHERE id=?", (now, req["id"]))
+                if not final:
+                    self.event(c, con["chat_id"], "request-status", {"request": self.public_request(
+                        self.row(c, "SELECT * FROM requests WHERE id=?", req["id"]))})
             self.event(c, con["chat_id"], "conductor-reply", {
                 "requestId": req["id"], "conductorId": con["id"], "messageKey": command.get("messageKey") or ident("msg"),
                 "text": command.get("text", ""), "chunk": False, "final": final, "epoch": token["epoch"],
@@ -1215,6 +1431,7 @@ class Store:
             intents.scope_paths(spec['writeScope'])
             self.close_questions(c, req['id'], 'resolved-by-declaration', kind='declaration')
             did, aid = ident("del"), ident("att")
+            spec = {**spec, "correlation": self.correlation(c, req, token, did)}
             status = "awaiting-approval" if policy["approvalPolicy"] == "required" else "ready"
             c.execute("INSERT INTO delegations(id, request_id, chat_id, conductor_id, title, spec, status, version, attempt_id,"
                       " attempt_count, max_attempts, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -1233,16 +1450,26 @@ class Store:
                 self.pool.set_area(c, 'delegation', did, area)
             self.pool.decide(c, req['id'], 'scope', {'delegationId': did, 'writeScope': spec['writeScope'], 'area': area}, 'turn:' + token['turnId'], 'declared', did)
             d = self.row(c, "SELECT * FROM delegations WHERE id=?", did)
+            # Serialized assignment record (deciding conductor session, epoch, turn) and the task's owner epoch.
+            self.performers.register_task(c, d, token, command.get("assignmentKey"))
+            self.performers.bind(c, d, aid)
             self.event(c, con["chat_id"], "delegation-created", {"delegation": self.public_delegation(c, d)})
             if req["status"] in ("planning", "accepted", "awaiting-synthesis"):
                 self.set_request(c, req, "delegated")
             return {"type": kind, "requestId": req["id"], "delegationId": did, "status": status}
+        if kind == "escalate":
+            d = self.row(c, "SELECT * FROM delegations WHERE id=? AND request_id=?", command.get("delegationId"), req["id"])
+            require(d is not None, "delegation_unknown", "Escalate a delegation of this request")
+            require(self.performers.settings(c)["resolverAuto"] == "conductor-may-engage", "resolver_auto_disabled",
+                    "Only the Human engages the resolver under the current policy; ask instead")
+            return {"type": kind, "requestId": req["id"],
+                    **self.performers.escalate(c, d, command.get("reason") or "", "conductor", "turn:" + token["turnId"])}
         if kind == "ask":
             qid = self.question(c, req['id'], con['id'], 'conductor', command.get('text', ''), 'turn:' + token['turnId'] + ':' + digest(command), details=command)
             self.event(c, con["chat_id"], "conductor-question", {"requestId": req["id"], "conductorId": con["id"],
                                                                  "text": command.get("text", ""), "questionId": qid})
             return {"type": kind, "requestId": req["id"]}
-        raise ContractError("command_unknown", "Conductor command must be reply, delegate or ask")
+        raise ContractError("command_unknown", "Conductor command must be reply, delegate, escalate or ask")
 
     def compaction(self, c, conductor_id, token, usage, state):
         """Existing handoff reducer: observe at the turn boundary; a caught-up standby takes ownership."""
@@ -1324,7 +1551,12 @@ class Store:
                 c.execute("INSERT OR REPLACE INTO attempt_waits VALUES(?,?)", (attempt["id"], reason))
                 self.event(c, row["chat_id"], "delegation-waiting", {"delegation": self.public_delegation(c, row), "reason": reason})
                 return None
-            if conductor_pool.enabled(self.policy(c, row['chat_id'])):
+            worker = None
+            binding = self.performers.binding(c, attempt["id"])
+            if binding and binding["tier"] == "resolver":
+                # The resolver is a separate internal session of the same logical performer, never a pool hire.
+                worker = "resolve-cq-" + attempt["id"][4:]
+            elif conductor_pool.enabled(self.policy(c, row['chat_id'])):
                 worker, reason = self.pool.reserve_worker(c, row, conductor_pool.signature(self.policy(c, row['chat_id']), 'worker', json.loads(row['spec'])))
                 if reason:
                     c.execute('INSERT OR REPLACE INTO attempt_waits VALUES(?,?)', (attempt['id'], reason))
@@ -1341,6 +1573,7 @@ class Store:
                     self.event(c, row['chat_id'], 'delegation-waiting', {'delegation': self.public_delegation(c, row), 'reason': reason})
                     return None
             c.execute("UPDATE attempts SET status='starting', updated_at=? WHERE id=?", (self.clock(), attempt["id"]))
+            self.performers.claim(c, row, attempt, worker)
             if row["status"] == "ready":
                 self.set_delegation(c, row, "dispatched")
             return lambda: backend.start(self.attempt_context(attempt["id"]))
@@ -1355,6 +1588,9 @@ class Store:
 
     def admission(self, c, row):
         spec = json.loads(row["spec"])
+        reason = self.performers.admission(c, row)
+        if reason:
+            return reason
         for dep in spec.get("dependencies", []):
             state = self.row(c, "SELECT status FROM requests WHERE id=?", dep)
             failed = c.execute("SELECT COUNT(*) FROM delegations WHERE request_id=? AND status IN ('failed','cancelled')", (dep,)).fetchone()[0]
@@ -1362,11 +1598,12 @@ class Store:
                 return 'dependency-failed:' + dep
             if not state or state["status"] != "completed":
                 return "dependency:" + dep
+        resolver = (self.performers.binding(c, row['attempt_id']) or {}).get('tier') == 'resolver'
         if conductor_pool.enabled(self.policy(c, row['chat_id'])):
             area = self.pool.get_area(c, 'delegation', row['id'])
             if not area:
                 return 'area-required'
-            if not c.execute('SELECT 1 FROM attempt_workers WHERE attempt_id=?', (row['attempt_id'],)).fetchone():
+            if not resolver and not c.execute('SELECT 1 FROM attempt_workers WHERE attempt_id=?', (row['attempt_id'],)).fetchone():
                 reason = self.pool.room(c, self.roles.pool_role(spec.get('workProfile', 'work')), area)
                 if reason:
                     return reason
@@ -1399,7 +1636,8 @@ class Store:
         return {"attemptId": a["id"], "number": a["number"], "status": a["status"], "delegationId": d["id"],
                 "requestId": d["request_id"], "chatId": d["chat_id"], "title": d["title"], "spec": json.loads(d["spec"]), "verifier": (self.row(c, "SELECT agent_id FROM attempt_verifiers WHERE attempt_id=?", attempt_id) or {}).get("agent_id"),
                 "worker": self.row(c, 'SELECT p.* FROM pool_members p JOIN attempt_workers w ON w.worker_id=p.id WHERE w.attempt_id=?', a['id']),
-                "cancelRequested": bool(d["cancel_requested"]), "external": json.loads(a["external"] or "null"), "policy": self.policy(c, d["chat_id"])}
+                "cancelRequested": bool(d["cancel_requested"]), "external": json.loads(a["external"] or "null"), "policy": self.policy(c, d["chat_id"]),
+                "area": self.pool.get_area(c, "delegation", d["id"]), **self.performers.attempt_view(c, a["id"])}
 
     def record_external(self, attempt_id, external):
         with self.tx() as c:
@@ -1469,6 +1707,8 @@ class Store:
             state('role-control:' + p['commandId'], 'role-control', p)
         elif kind == 'role-pools-state':
             state('role-pools', 'role-pools', p)
+        elif kind == 'performers-state':
+            state('performers', 'performers', p)
         elif kind == 'responsibility-state':
             state('responsibility:' + p['requestId'], 'responsibility', p)
         elif kind == "input-accepted":
@@ -1493,6 +1733,14 @@ class Store:
         elif kind == 'area-question':
             state('input:' + p['inputId'], 'input', {'inputId': p['inputId'], 'status': 'held', 'waitReason': 'area-required', 'catalog': p['catalog']})
             chat_entry('question', p['question'], inputId=p['inputId'], question='area', catalog=p['catalog'])
+        elif kind in ("result-conflict", "input-conflict"):
+            feed("ops", "ops:" + event["id"], {"eventType": kind, **{k: v for k, v in p.items() if k != "delegation"}, "at": event["createdAt"]})
+            d = p.get("delegation") or {}
+            chat_entry("notice", None, code=kind, requestId=d.get("requestId"), delegationId=d.get("id"), inputId=p.get("inputId"),
+                       clientMessageId=p.get("clientMessageId"), detail={"conflictId": p["conflictId"], "class": p["class"]})
+        elif kind == "request-revised":
+            chat_entry("status", None, requestId=p["requestId"], status="revised", revision=p["revision"],
+                       detail={"stoppedDelegations": p["stoppedDelegations"]})
         elif kind == "clarification-needed":
             chat_entry("question", None, inputId=p["inputId"], clientMessageId=p.get("clientMessageId"),
                        candidates=p["candidates"], question="relation")
@@ -1515,7 +1763,7 @@ class Store:
             chat_entry("question", p["text"], requestId=p["requestId"], conductorId=p["conductorId"], question="conductor", questionId=p.get("questionId"))
         elif kind in ("worker-observation", "workspace-status", "delegation-created", "delegation-waiting", "delegation-unblocked", "delegation-approved", "attempt-started", "attempt-retry",
                       "delegation-cancel-requested", "delegation-completed", "delegation-failed",
-                      "delegation-cancelled", "worker-question"):
+                      "delegation-cancelled", "worker-question", "resolver-engaged", "attempt-lease-expired"):
             d = p["delegation"]
             old = self.row(c, "SELECT payload FROM ui_state WHERE key=?", "worker:" + d["id"])
             previous = json.loads(old["payload"]) if old else {}
@@ -1529,9 +1777,10 @@ class Store:
             state("worker:" + d["id"], "worker", {**d, "progress": previous.get("progress") if kind != "attempt-retry" else None,
                                                   "waitReason": wait, "lastEvent": kind, "lastUpdateAt": event["createdAt"]})
             if kind in ("delegation-created", "delegation-approved", "delegation-completed", "delegation-failed",
-                        "delegation-cancelled", "attempt-retry"):
+                        "delegation-cancelled", "attempt-retry", "resolver-engaged"):
                 chat_entry("status", None, requestId=d["requestId"], delegationId=d["id"], status=d["status"],
-                           title=d["title"], version=d["version"], attemptCount=d["attemptCount"])
+                           title=d["title"], version=d["version"], attemptCount=d["attemptCount"],
+                           admission=d.get("admission"))
         elif kind == "attempt-progress":
             old = self.row(c, "SELECT payload FROM ui_state WHERE key=?", "worker:" + p["delegationId"])
             if old:
@@ -1540,13 +1789,18 @@ class Store:
                     state("worker:" + p["delegationId"], "worker", {**current, "progress": p["progress"], "waitReason": None,
                                                                     "lastEvent": kind, "lastUpdateAt": event["createdAt"]})
         elif kind in ("stale-owner-rejected", "command-rejected", "event-quarantined", "attempt-late-event",
-                      "control-rejected", "turn-abandoned"):
+                      "control-rejected", "turn-abandoned", "effect-outcome-unknown"):
             feed("ops", "ops:" + event["id"], {"eventType": kind, **p, "at": event["createdAt"]})
             if kind == "control-rejected":
                 chat_entry("notice", None, code=p["reason"], commandId=p.get("commandId"), action=p.get("action"),
                            detail={k: p.get(k) for k in ("status", "version")})
         if kind in ('request-created', 'request-status', 'delegation-created', 'delegation-waiting', 'delegation-unblocked', 'attempt-started', 'delegation-completed', 'delegation-failed', 'delegation-cancelled', 'worker-question'):
             state('role-pools', 'role-pools', self.roles.projection(c))
+        if kind in ('delegation-created', 'delegation-waiting', 'delegation-unblocked', 'attempt-started', 'attempt-retry',
+                    'attempt-progress', 'delegation-completed', 'delegation-failed', 'delegation-cancelled', 'worker-question',
+                    'resolver-engaged', 'attempt-lease-expired', 'conductor-created', 'owner-changed'):
+            # Domain → one performer → current task → sessions; rebuilt from the ledger on every relevant event.
+            state('performers', 'performers', self.performers.projection(c))
         return None
 
     # -- reads: snapshot, replay, metrics ------------------------------------------------
@@ -1559,14 +1813,15 @@ class Store:
             chat = [self.feed_row(dict(r)) for r in c.execute("SELECT * FROM ui_feed WHERE chat_id=? AND kind='chat' AND id<=?"
                                                              " ORDER BY id", (chat_id, cursor))]
             queue = self.queue_depths(c)
-            logical = {'id': 'logical-conductor', 'instanceCount': c.execute('SELECT COUNT(*) FROM conductors').fetchone()[0]}
+            logical = self.performers.conductor_view(c)
             role_pools = self.roles.projection(c)
+            performers = self.performers.projection(c)
             employment = self.pool.configuration(c)
             members = [{'id': m['id'], 'role': m['role'], 'area': json.loads(m['area']), 'state': m['state'], 'lastUsedAt': m['last_used']}
                        for m in c.execute('SELECT * FROM pool_members ORDER BY role,id')]
         finally:
             c.execute("COMMIT")
-        return {"rolePools": role_pools, "logicalConductor": logical, "employment": employment, "poolMembers": members, "schemaVersion": SCHEMA_VERSION, "kind": "conductor-queue-snapshot", "chatId": chat_id, "cursor": cursor,
+        return {"rolePools": role_pools, "performers": performers, "logicalConductor": logical, "employment": employment, "poolMembers": members, "schemaVersion": SCHEMA_VERSION, "kind": "conductor-queue-snapshot", "chatId": chat_id, "cursor": cursor,
                 "state": [{"key": r["key"], "kind": r["kind"], "version": r["version"], "payload": json.loads(r["payload"])}
                           for r in rows], "chat": chat, "queue": queue, "observedAt": iso(self.clock())}
 
@@ -1578,14 +1833,15 @@ class Store:
             cursor = c.execute("SELECT COALESCE(MAX(id), 0) FROM ui_feed").fetchone()[0]
             rows = [dict(r) for r in c.execute("SELECT key, kind, payload, version FROM ui_state WHERE kind != 'input'")]
             queue = self.queue_depths(c)
-            logical = {'id': 'logical-conductor', 'instanceCount': c.execute('SELECT COUNT(*) FROM conductors').fetchone()[0]}
+            logical = self.performers.conductor_view(c)
             role_pools = self.roles.projection(c)
+            performers = self.performers.projection(c)
             employment = self.pool.configuration(c)
             members = [{'id': m['id'], 'role': m['role'], 'area': json.loads(m['area']), 'state': m['state'], 'lastUsedAt': m['last_used']}
                        for m in c.execute('SELECT * FROM pool_members ORDER BY role,id')]
         finally:
             c.execute("COMMIT")
-        return {"rolePools": role_pools, "logicalConductor": logical, "employment": employment, "poolMembers": members, "schemaVersion": SCHEMA_VERSION, "kind": "conductor-queue-board", "cursor": cursor,
+        return {"rolePools": role_pools, "performers": performers, "logicalConductor": logical, "employment": employment, "poolMembers": members, "schemaVersion": SCHEMA_VERSION, "kind": "conductor-queue-board", "cursor": cursor,
                 "state": [{"key": r["key"], "kind": r["kind"], "version": r["version"], "payload": json.loads(r["payload"])}
                           for r in rows], "chat": [], "queue": queue, "observedAt": iso(self.clock())}
 
@@ -1703,15 +1959,20 @@ class Store:
                 uncertain.append(attempt['id'])
             cancels = [r[0] for r in c.execute("SELECT a.id FROM attempts a JOIN delegations d ON d.attempt_id=a.id WHERE"
                                                " d.status='cancel-requested' AND a.status IN ('starting','running')")]
+            # An external effect whose outcome was not recorded before the crash is reported, never re-run.
+            unknown = self.performers.uncertain_effects(c)
         return {"abandonedTurns": [con["turn_id"] for con in abandoned], "uncertainAttempts": uncertain,
-                "pendingCancels": cancels}
+                "pendingCancels": cancels, "unknownEffects": unknown}
 
     # -- public shapes -----------------------------------------------------------------------
     def public_request(self, r):
         owned = self.row(self.connection(), "SELECT payload FROM request_intents WHERE request_id=?", r["id"])
         return {"processing": json.loads((self.row(self.connection(), "SELECT source FROM request_processing WHERE request_id=?", r["id"]) or {}).get("source", "null")), "logicalConductorId": "logical-conductor", "conductorInstanceId": r["conductor_id"] or None, "area": self.pool.get_area(self.connection(), "request", r["id"]), "waitReason": "employment-limit" if r["status"] == "queued-for-instance" else None, "parentId": r["parent_id"], "intent": json.loads(owned["payload"]) if owned else None,"id": r["id"], "chatId": r["chat_id"], "conductorId": r["conductor_id"], "ownerEpoch": r["owner_epoch"],
                 "title": r["title"], "status": r["status"], "version": r["version"], "receivedAt": r["received_at"],
-                "firstResponseAt": r["first_response_at"], "finalAt": r["final_at"], "updatedAt": r["updated_at"]}
+                "firstResponseAt": r["first_response_at"], "finalAt": r["final_at"], "updatedAt": r["updated_at"],
+                "revision": self.revision(self.connection(), r["id"]),
+                # Delivered output and completion are separate: a partial answer never completes the request.
+                "output": "completed" if r["status"] == "completed" else "delivered" if r["first_response_at"] is not None else "none"}
 
     def public_conductor(self, r):
         state = json.loads(r["handoff"])
@@ -1727,4 +1988,18 @@ class Store:
                 "attemptCount": d["attempt_count"], "maxAttempts": d["max_attempts"],
                 "cancelRequested": bool(d["cancel_requested"]), "result": json.loads(d["result"] or "null"),
                 "error": json.loads(d["error"] or "null"), "attemptStatus": a["status"] if a else None,
-                "external": json.loads(a["external"] or "null") if a else None, "updatedAt": d["updated_at"]}
+                "external": json.loads(a["external"] or "null") if a else None, "updatedAt": d["updated_at"],
+                "tier": (self.performers.binding(c, d["attempt_id"]) or {}).get("tier", "expert"),
+                "performerId": (self.performers.binding(c, d["attempt_id"]) or {}).get("performer_id"),
+                "correlation": self.delegation_correlation(c, d, a), "admission": self.result_admission(c, d)}
+
+    def delegation_correlation(self, c, d, a):
+        recorded = json.loads(d["spec"]).get("correlation")
+        if not recorded:  # Delegations recorded before correlation existed: derive what the ledger still knows.
+            root = self.root_request(c, d["request_id"]) or {"id": d["request_id"]}
+            recorded = {"rootTaskId": root["id"], "turnId": None, "revision": 1, "assignmentId": d["id"],
+                        "subtaskId": d["request_id"] if root["id"] != d["request_id"] else d["id"],
+                        "conductorSessionId": None, "conductorTurnId": None}
+        binding = self.performers.binding(c, d["attempt_id"]) or {}
+        return {**recorded, "attempt": a["number"] if a else d["attempt_count"], "attemptId": d["attempt_id"],
+                "performerSessionId": binding.get("session_id")}

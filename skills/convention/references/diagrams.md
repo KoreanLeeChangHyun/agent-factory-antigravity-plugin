@@ -8,15 +8,17 @@
   architecture, database/ERD or API design model as a separate JSON file under
   `assets/`. At the relevant location, `SKILL.md` uses a descriptive relative Markdown
   link to that file; it does not embed the JSON object or a fenced JSON copy. Follow
-  [Documents](../../document/SKILL.md#document-package) for the single-source package.
-- Use stable, descriptive kebab-case filenames such as `system-architecture.json`,
-  `database-erd.json` and `api-design.json`. Keep critical meaning in nearby readable
+  [Documents](../../document/references/format.md#document-package) for the single-source package.
+- Use stable, descriptive kebab-case filenames. Archify assets end in `.architecture.json`
+  or `.sequence.json` (for example `system.architecture.json`) so the Document viewer and the
+  diagram editor render them; other models keep names such as `database-erd.json` and `api-design.json`. Keep critical meaning in nearby readable
   text; the linked JSON carries the structured representation.
 - Use an available, documented Archify schema; do not invent one or claim rendering
   support without an available renderer.
 - Read `archify.md` for architecture and sequence assets: the pinned official validator
   and standalone [HTML delivery](archify.md). ERD has no Archify renderer in this integration.
 - Preserve existing diagrams when no supported conversion is available.
+- Apply [section-final visual placement](prompting.md#section-table-order).
 
 - Ground labels and relationships in inspected code, schemas or accepted Specifications.
   Diagrams establish no runtime behavior, authority or completion.

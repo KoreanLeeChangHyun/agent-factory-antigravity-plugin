@@ -129,7 +129,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             identity = command_parser.add_mutually_exclusive_group(required=True)
             identity.add_argument("--run-id")
             identity.add_argument("--dispatch-id")
-            command_parser.add_argument("--document", choices=("state", "request", "result", "receipt", "capability", "loop"),
+            command_parser.add_argument("--document", choices=("state", "request", "result", "receipt", "capability", "loop", "trace", "trace-error", "events", "provider-events"),
                                         help="Read a document as lossless Unicode text pages (default page: 4000 characters)")
             add_read_page_arguments(command_parser)
         else:
@@ -203,6 +203,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     agent_delete_parser.add_argument("--agent", required=True)
     agent_delete_parser.add_argument("--actor", choices=("human",), required=True)
     agent_delete_parser.add_argument("--authorization-reference", required=True)
+    agent_delete_parser.add_argument("--with-tasks", action="store_true",
+                                     help="Also delete the ended task histories this Main dispatched")
+    agent_delete_parser.add_argument("--preview", action="store_true",
+                                     help="Check deletability and count dispatched tasks without deleting")
 
     inbox_parser = commands.add_parser("inbox")
     add_project_argument(inbox_parser)

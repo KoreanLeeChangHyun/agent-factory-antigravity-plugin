@@ -48,6 +48,51 @@ MAX_RPC_FRAME_BYTES = None
 MAX_RPC_QUEUE_BYTES = None
 
 
+def fixed_instructions_present(thread: dict, instructions: str) -> bool:
+    """Confirm an unchanged contract in the resumed thread's retained native history.
+
+    Only recovery/migration of the delivery sidecar needs this read. Unknown history
+    falls back to injection; logs are never rewritten and user text is not evidence.
+    """
+    marker = "These are the current Agent Factory fixed instructions."
+    path = thread.get("path")
+    if (marker not in instructions or not isinstance(thread.get("id"), str) or not thread["id"]
+            or not isinstance(path, str) or not Path(path).is_absolute()):
+        return False
+    present = False
+
+    def observe(item):
+        nonlocal present
+        if item.get("type") != "message" or item.get("role") != "developer":
+            return
+        body = "\n".join(part.get("text", "") for part in item.get("content", [])
+                         if part.get("type") in ("input_text", "text"))
+        if marker in body:
+            # A later revision supersedes a matching earlier contract. Unrelated
+            # native permissions/Skill messages do not replace this contract.
+            present = body == instructions or body.startswith(instructions + "\n")
+
+    try:
+        with Path(path).open(encoding="utf-8") as stream:
+            first = json.loads(next(stream))
+            if first.get("type") != "session_meta" or first.get("payload", {}).get("id") != thread.get("id"):
+                return False
+            for line in stream:
+                record = json.loads(line)
+                payload = record.get("payload", {})
+                if record.get("type") == "compacted":
+                    present = False
+                    for item in payload.get("replacement_history") or []:
+                        observe(item)
+                elif record.get("type") == "response_item":
+                    observe(payload)
+                elif record.get("type") == "event_msg" and payload.get("type") == "thread_rolled_back":
+                    present = False
+    except (OSError, ValueError, TypeError, AttributeError, StopIteration):
+        return False
+    return present
+
+
 class FrameQueue(queue.Queue):
     def __init__(self):
         super().__init__()
@@ -141,7 +186,12 @@ class Rpc:
                     self.observer("read-error", {"message": str(value)})
                 raise value
             self.last_frame = value
-            value = json.loads(value)
+            try:
+                value = json.loads(value)
+            except (ValueError, UnicodeError):
+                if self.observer is not None:
+                    self.observer("receive-invalid", value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value)
+                raise
             if self.observer is not None:
                 self.observer("receive", value)
             if not isinstance(value, dict):
@@ -345,7 +395,8 @@ def activate_persisted_goal(rpc, thread_id, params, turn):
 
 class Bridge(NotificationHandlers):
     def __init__(self, runtime, session, state, rpc):
-        self.runtime, self.session, self.state, self.rpc = runtime, session, state, rpc
+        from runs.trace import DeliveryRpc
+        self.runtime, self.session, self.state, self.rpc = runtime, session, state, DeliveryRpc(rpc, state)
         self.thread_id = None
         self.turn_id = None
         self.goal = None
@@ -445,8 +496,8 @@ class Bridge(NotificationHandlers):
         # The core owns reinjection of developer instructions during compaction,
         # including inside a turn. Never race notifications with a user turn.
         # Every owned start/resume installs today's fixed text, also for sessions
-        # created before this protocol. A sidecar hash tracks updates without
-        # scanning history markers; the core handles compaction reinjection.
+        # created before this protocol. The sidecar handles ordinary reuse; native
+        # retained history can confirm delivery after a fork or sidecar recovery.
         parts = prompt if isinstance(prompt, PromptParts) else None
         if parts is not None:
             developer_instructions = prompt.fixed
@@ -528,6 +579,8 @@ class Bridge(NotificationHandlers):
                     raise
                 previous_delivery = None
             pending_fixed_update = bool(prior and previous_delivery != delivery_record)
+            if pending_fixed_update and fixed_instructions_present(response["thread"], developer_instructions):
+                pending_fixed_update = False
         emit({"type": "thread.started", "thread_id": self.thread_id})
         fast = self.session.get("fast") if self.state.get("goalAction") in (None, "resume", "reopen") else None
         models = []
@@ -589,6 +642,10 @@ class Bridge(NotificationHandlers):
             elif mode is True:
                 objective = self.state.get("goalObjective")
                 if objective:
+                    if self.runtime.structured_receipt(self.state):
+                        objective += ("\nReceipt lifecycle: finish the bounded work and return the final JSON with truthful "
+                                      "receipt fields. The runtime creates receipt.json AFTER that final response. "
+                                      "Do not wait for that file or block this Goal solely because it does not exist yet.")
                     self.set_goal(objective=objective, status="paused")
                     activate_goal = True
                 elif self.goal:
@@ -615,6 +672,10 @@ class Bridge(NotificationHandlers):
                         "Execute the plan in this same Work session within the already authorized request. "
                         "Respect unresolved Human decisions. Complete the original result and receipt contract.\n" + full_prompt)
                 delivery_record = None
+        if activate_goal:
+            # Native Goal starts without turn input; keep the run's path explicit
+            # even when the caller supplies plain text and the schema is stable.
+            full_prompt += "\nCurrent run resultPath: " + json.dumps(self.state["resultPath"], ensure_ascii=False) + "\n"
         if activate_goal and self.planning:
             # Keep Goal paused until an actual default-mode transition completes.
             self.goal_start = ({**params, "developerInstructions": full_prompt}, self.execution_turn)
@@ -780,7 +841,9 @@ class Bridge(NotificationHandlers):
                     continue
                 if self.handle(method, params):
                     return
-        except Exception:
+        except Exception as error:
+            from runs.trace import exception
+            exception(self.state, "provider.adapter.failed", error)
             # Best effort only: state/events report an unconfirmed pause if RPC fails.
             if self.thread_id and self.goal_enabled and self.goal and self.goal.get("status") == "active":
                 try:
@@ -816,6 +879,9 @@ def connection_worker():
             runtime.runtime_paths.bind(state["runtimeBinding"])
             session = runtime.safe_read_json(Path(state["nativeSessionPath"]))
             current.update(state=state, session=session)
+            if rpc is not None:
+                from runs.trace import bind_protocol_observer
+                bind_protocol_observer(rpc, state)
             if rpc is None:
                 def factory():
                     command, environment = codex_policy.app_server(current["session"], current["state"])

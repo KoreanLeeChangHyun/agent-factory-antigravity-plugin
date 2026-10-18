@@ -8,3 +8,4 @@ One of: `--input` | `--input-json`
 - `--documents-root DOCUMENTS_ROOT`: Physical workspace containing docs; runtime identity stays --project-root
 - `--input INPUT`
 - `--input-json INPUT_JSON`: Inline JSON payload; avoids temporary input files for read-only queries
+- `--compact`: Compact JSON output without dropping records, rules or diagnostics

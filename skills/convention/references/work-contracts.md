@@ -4,6 +4,8 @@
 
 ## 1. Scope
 
+### 1.1. Contract kinds and authority
+
 - Every project change runs under a contract of one of two kinds. Questions,
   consultation and planning create neither.
   - A **long-term contract** is the durable contract this reference defines: a
@@ -26,6 +28,9 @@
 - A request to organize a list or show a sample does not authorize implementation.
   Preserve the captured execution mode and approval policy; preparing a contract adds
   no routine approval gate under bypass.
+
+### 1.2. File scope and durable storage
+
 - Use file-level change scope for code work. For research or other non-file work,
   identify the actual targets and deliverables without inventing code paths.
 - Follow [Document](../../document/SKILL.md) when storing a durable contract; ordinary
@@ -44,14 +49,7 @@
 
 ## 2. Contract content
 
-| Contract section | Required content |
-|---|---|
-| 계약 정보 | A metadata table with contract ID, positive version, project root and governing specifications |
-| 작업 고용 | Planned Agent IDs and roles, including Main, Work and Verification when the selected route uses them |
-| 작업 목표 | Stable task IDs, the assigned Agent IDs, work and scope, and observable completion criteria |
-| 제약 조건 | A table of important constraints, exclusions and task dependencies, keyed by task ID where applicable |
-| 파일 구조 | Exact project-relative paths in a directory tree, with intended add/modify/delete/move operation, task ID and file-specific goal adjacent to each file |
-| 작업 순서 | A task-level diagram whose nodes use the same task IDs and whose edges visualize the dependencies recorded in 제약 조건 |
+### 2.1. Identity and execution records
 
 - Keep the document front matter required by Document; the 계약 정보 table is the
   Human-facing identification view and must agree with that front matter.
@@ -63,6 +61,9 @@
   and blockers. Keep the execution record distinct from the contract change history.
 
 - Record the project or repository root when needed to resolve paths unambiguously.
+
+### 2.2. Specifications, dependencies and scope
+
 - Include governing specifications with path/link, relevant section and version when
   applicable; explicitly distinguish no applicable specification from one not yet found.
 - Record dependencies once in the 제약 조건 table. The 작업 순서 diagram derives its
@@ -79,9 +80,22 @@
 - Keep task-specific content in the Human-facing contract. Do not copy the common
   execution rules below or explanatory user instructions into every contract.
 
+### 2.3. Required contract sections
+
+| Contract section | Required content |
+|---|---|
+| 계약 정보 | A metadata table with contract ID, positive version, project root and governing specifications |
+| 작업 고용 | Planned Agent IDs and roles, including Main, Work and Verification when the selected route uses them |
+| 작업 목표 | Stable task IDs, the assigned Agent IDs, work and scope, and observable completion criteria |
+| 제약 조건 | A table of important constraints, exclusions and task dependencies, keyed by task ID where applicable |
+| 파일 구조 | Exact project-relative paths in a directory tree, with intended add/modify/delete/move operation, task ID and file-specific goal adjacent to each file |
+| 작업 순서 | A task-level diagram whose nodes use the same task IDs and whose edges visualize the dependencies recorded in 제약 조건 |
+
 <a id="execution-rules"></a>
 
 ## 3. Common execution rules
+
+### 3.1. Main execution record
 
 - Main owns the execution-record section of the bound
   `docs/progress/<contract-id>/contract-v<N>.md`. Assign its exact modify operation
@@ -91,6 +105,9 @@
   validates the existing announcement and preserves the accepted contract bytes.
   Work reports progress and blockers in its result; Verification reports its receipt.
   Neither role must edit the shared record to complete its own task.
+
+### 3.2. Bound contract and legacy records
+
 - Before announcing a new contract task list, include a structured `contract` object:
   `id`, positive integer `version`, `progress: {path: "docs/progress/<contract-id>/contract-v<N>.md", owner: "main"}`, and
   `fileOperations` entries with `taskIds`, `operation`, `path` and (for moves)
@@ -101,13 +118,14 @@
   Historical accepted snapshots remain immutable; do not retrofit or replace them.
 - Historical contracts bound to `progress.md` keep that path and its original
   recording contract. Do not rewrite or migrate their accepted snapshots.
-- Work run without a contract creates no `docs/progress/<contract-id>/` and claims no
-  `contract-version`. Existing contract-less records use the Document
-  [direct-execution record](../../document/references/progress.md#package-and-metadata) form.
+- Work run without a contract claims no `contract-version`. Store its execution details
+  only in Agent Factory runtime storage and preserve existing historical records.
 - Under bypass, routine reporting within the accepted outcome adds no approval gate.
   A progress bookkeeping omission alone must not block otherwise authorized Work:
   report it to Main and continue independent in-scope work. Never expand destructive,
   external or product scope under this exception.
+
+### 3.3. Scope and amendments
 
 - Before finalizing file scope, inspect relevant code, specifications, callers and
   dependencies, including needed test, configuration and generated-file changes.
@@ -127,6 +145,9 @@
 - Record confirmed amendments as a new contract version, retaining the original and
   decision evidence. A contract draft alone grants no deletion, publication or other
   additional authority; apply existing action-specific authorization rules.
+
+### 3.4. Completion evidence
+
 - At completion, compare actual file operations with the bound version, accounting
   for the starting state; report missing or unexpected changes and task completion
   evidence. Do not call blocked, failed or unchecked work complete.
@@ -139,65 +160,33 @@
 
 ## 4. Sample contract
 
-- The paths and specification below are illustrative, not inspected project facts.
+- Read `work-contract-example.md` for an [illustrative sample](work-contract-example.md#sample)
+  when preparing an example. Its paths and specification are not inspected project facts.
 
 ### 4.1. 계약 정보
 
-| Field | Value |
-|---|---|
-| Contract ID | `WC-example` |
-| Version | 1 |
-| Project root | `/example/project` |
-| Governing specification | None identified in this example |
+- [Example](work-contract-example.md#41-계약-정보).
 
 ### 4.2. 작업 고용
 
-| Agent ID | Role |
-|---|---|
-| `main-example` | Main: coordination and execution record |
-| `work-example` | Work: implement T1 and T2 |
-| `verify-example` | Verification: independently check T1 and T2 |
+- [Example](work-contract-example.md#42-작업-고용).
 
 ### 4.3. 작업 목표
 
-| Task ID | Agent IDs | Work and boundary | Completion criteria |
-|---|---|---|---|
-| T1 | `work-example`, `verify-example` | Add task selection | Individual and all-item selection can be set and cleared |
-| T2 | `work-example`, `verify-example` | Submit selected tasks | Only selected tasks are submitted; an empty selection does not execute |
+- [Example](work-contract-example.md#43-작업-목표).
 
 ### 4.4. 제약 조건
 
-| Task ID | Kind | Constraint or dependency |
-|---|---|---|
-| T2 | Dependency | T1 must finish before T2 starts |
+- [Example](work-contract-example.md#44-제약-조건).
 
 ### 4.5. 파일 구조
 
-```text
-Path / tree                    Change  Task ID  File goal
-src/
-├── ui/
-│   └── TaskList.tsx             +/-     T1      Selection controls
-├── state/
-│   └── taskSelection.ts         +       T1,T2   Selection state
-└── actions/
-    └── submitTasks.ts           +/-     T2      Submit selected tasks
-```
-
-- `+` means add; `-` means delete; `+/-` means modify. A move states source and
-  destination explicitly. Each path also appears as an exact file operation in the
-  machine-bound file list or attachment.
+- [Example](work-contract-example.md#45-파일-구조).
 
 ### 4.6. 작업 순서
 
-```mermaid
-flowchart LR
-    T1["T1 · work-example → verify-example"] --> T2["T2 · work-example → verify-example"]
-```
-
-<!-- contract-execution-record -->
+- [Example](work-contract-example.md#46-작업-순서).
 
 ### 4.7. 실행 기록
 
-- The actual contract file starts this separate section empty and Main records
-  bound execution IDs and evidence here as work proceeds.
+- [Example](work-contract-example.md#47-실행-기록).

@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
 from tasks.commits import bound_main  # noqa: E402
 from tasks import announcement, binding  # noqa: E402
-from tasks.orchestrator_guard import ENV, authorized_write, has_symlink, inside  # noqa: E402
+from hooks.orchestrator_guard import ENV, authorized_write, has_symlink, inside  # noqa: E402
 from storage.errors import ContractError  # noqa: E402
 from sync_documents import atomic_write  # noqa: E402 - Document writer; runtime atomic_write rejects project paths
 from storage.files import file_lock, safe_read_json  # noqa: E402

@@ -22,7 +22,7 @@ def main():
         command.add_argument("--tool-dir", type=Path, required=True, help="Directory prepared by install.")
         command.add_argument("input", type=Path, help="JSON inside a Document package assets/ directory.")
         if name == "render":
-            command.add_argument("--output", type=Path, required=True, help="New docs/artifact/<category>/<topic>/*.html file; parent must exist.")
+            command.add_argument("--output", type=Path, required=True, help="New docs/artifact/<fixed-domain>/<name>.html file; parent must exist, no nested directories.")
             command.add_argument("--open", action="store_true", help="Open generated HTML in the local OS browser.")
     opener = commands.add_parser("open", help="Open an existing artifact HTML in the local OS browser.")
     opener.add_argument("--project-root", type=Path, required=True)

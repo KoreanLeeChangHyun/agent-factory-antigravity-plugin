@@ -2,69 +2,64 @@
 
 ## 1. Directory map
 
-- `<project-root>/docs/` is the canonical project document root. Create only the
-  locations needed by the task; this map is not a request to scaffold every directory.
-- Type-specific rules linked below own document meaning and metadata. Artifact purpose
-  and delivery rules belong to [Convention](../../convention/references/artifacts.md).
+- Canonical project document root: `<project-root>/docs/`.
+
+- Directory guides: [artifact/](../../convention/references/artifacts.md),
+  [lessons-learned/](lessons-learned.md), [original/](original.md),
+  [refined/](refined.md) and [skills/](specification.md).
 
 ```text
 docs/
-├── original/<category>[-<domain>]-<name>/metadata.yaml
-├── refined/
-│   ├── analysis/<topic>/SKILL.md
-│   ├── research/<topic>/SKILL.md
-│   ├── interview/<topic>/SKILL.md
-│   ├── comparison/<topic>/SKILL.md
-│   └── history/<topic>/SKILL.md
-├── skills/<category>[-<domain>]-<name>/SKILL.md
-├── progress/<contract-id>/
-│   ├── progress.md
-│   ├── contract-v<N>.md
-│   └── <explicitly linked contract attachments>
+├── artifact/
+│   ├── output/
+│   ├── media/
+│   ├── data/
+│   ├── model/
+│   ├── software/
+│   ├── interactive/
+│   ├── evidence/
+│   ├── release/
+│   └── other/
 ├── lessons-learned/
-│   ├── errors/<readable-name>.md
-│   └── judgment-differences/<readable-name>.md
-└── artifact/
-    ├── preview/<task-or-topic>/
-    ├── evidence/<task-or-topic>/
-    ├── media/<task-or-topic>/
-    └── release/<version>/
+│   ├── errors/<domain>-<name>/
+│   └── judgment-differences/<domain>-<name>/
+├── original/<domain>-<name>/
+├── refined/
+│   ├── analysis/<domain>-<name>/
+│   ├── comparison/<domain>-<name>/
+│   ├── history/<domain>-<name>/
+│   ├── interview/<domain>-<name>/
+│   └── research/<domain>-<name>/
+└── skills/
+    ├── design-<domain>-<name>/
+    ├── info-<domain>-<name>/
+    └── rule-<domain>-<name>/
 ```
 
-- Refined and Specification packages may contain linked `references/` and `assets/`.
-  Do not repeat a Refined category prefix in its topic directory.
-- Document-owned assets stay in their package, even when they are images or JSON.
-  Standalone deliverables use `artifact/` without a required `SKILL.md` or metadata wrapper.
+## 2. Path notation and storage
 
-## 2. Routing and authority
+- `<domain>` is the domain name. Outside `skills/`, use `none` when no domain applies.
+- `skills/` requires a specific or shared domain; `none` is not allowed.
+- `<name>` is the package name.
+- Artifact domains contain files only; topic, date and version belong in filenames.
+  Multi-file bundles are archives; see the artifact guide for classification and controls.
+- Task progress and execution records reside only in Agent Factory runtime project
+  storage, outside `docs/`.
 
-| Content | Owner |
-|---|---|
-| External source metadata and links, without copied source bodies | [Original](original.md) |
-| Analysis, research, interview evidence, comparisons and historical records | [Refined](refined.md) |
-| Explicitly authorized current facts, rules and designs | [Specification](specification.md) |
-| Bound contract versions, execution records and progress | [Progress](progress.md) |
-| Error causes, remedies and Human/AI judgment differences | [Lessons Learned](lessons-learned.md) |
-| Standalone previews, retained evidence, reusable media and release bundles | [Artifacts](../../convention/references/artifacts.md) |
+<a id="rendering"></a>
 
-- Preserve the source's language, identity, provenance and authority. A move, a
-  `SKILL.md` filename or a report calling a decision final does not promote it to a Specification.
-- Use the existing Document catalog and search for canonical Documents. Artifacts
-  are not a Document type; do not add a parallel README index or database for this layout.
-- Expose only `docs/skills/` to host Skill directories through [managed synchronization](host-sync.md).
-  Host copies are derived; installed plugin capabilities remain outside project Documents.
+## 3. Rendering in the Document viewer
 
-## 3. Runtime boundary and migration
-
-- Store lesson narrative once in Markdown. Machine metadata and recovery state live
-  in the runtime resolver's project storage, including
-  `<runtime-home>/projects/<project-id>/lessons-learned/<record-id>.json`.
-  Honor the registered project identity and `AGENT_FACTORY_HOME`; do not hardcode a home path.
-- Runtime sessions, locks, caches, temporary logs and scratch files do not belong in
-  `docs/`. Use the producing run's storage or system temporary storage.
-- For isolated Documents, `--project-root` identifies the original project;
-  `--documents-root` is the physical workspace containing `docs/`.
-- Existing layouts remain historical input until migration is authorized. Follow
-  [Document migration](host-sync.md#document-layout-migration) for lesson and Refined
-  conversion, and [artifact reorganization](../../convention/references/artifacts.md)
-  for deliverables. Preserve backups, histories, attachments and incoming links.
+- The extension's control-center Document viewer lists and renders Documents read-only.
+  Write packages so they render without hand fixes:
+- The list shows each package by its `SKILL.md` front-matter `name` and one-line
+  `description`, and a standalone file (a lesson) by its `name` or first heading. Keep both present.
+- Link sub-documents and assets with relative paths inside the project (or plugin) checkout.
+  Absolute paths, `file://` links and paths that climb outside the checkout do not open.
+- Cross-document anchors use a heading or an explicit `<a id="..."></a>` marker; keep an anchor
+  stable once other Documents link to it.
+- A diagram renders only as an Archify JSON asset whose name ends in `.architecture.json` or
+  `.sequence.json`, linked from a list item or paragraph. The diagram appears right below that
+  link; keep the meaning in the link's sentence as well. See [Diagrams](../../convention/references/diagrams.md#document-assets).
+- Mermaid fences, raw HTML and images stay as code or links. Whole-line HTML comments are hidden.
+- `metadata.yaml` and front matter appear folded as metadata, not as body text.

@@ -16,9 +16,9 @@ class ManagedBackend:
     def __init__(self, conductor):
         self.conductor = conductor
         self.exec_path = files.PLUGIN_ROOT / 'scripts' / 'exec.py'
-        from tasks.conductor_workspaces import WorkUnits
+        from conductor.work_units import WorkUnits
         self.work_units = WorkUnits(conductor.root, conductor.path)
-        from tasks.conductor_workflows import Workflows
+        from conductor.workflows import Workflows
         self.workflows = Workflows(self)
 
     def call(self, arguments):
@@ -41,7 +41,7 @@ class ManagedBackend:
         run,session,message=request['run'],request['session'],request['message']
         config=session['settings']
         if session.get('area'):
-            from tasks import domains
+            from conductor import domains
             area = session['area']
             # Membership precedes external session creation, respecting Human placements.
             domains.assign_subdomain(self.conductor.path.parent, session['agentId'], area['domainId'], area['subdomainId'],

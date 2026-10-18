@@ -111,7 +111,7 @@ PROFILE_REASONS = {
     "scribe": ("Scribe researches, checks sources, writes, integrates and shortens Documents using public web search/read; "
                "writes stay inside the project's docs/ and shell commands stay read-only. No code/configuration writes, "
                "execution/dispatch scripts, sub-agents, commits, external publishing/writes or sensitive-data transmission. "
-               "Document scripts, including lessons.py, are allowed; drafts still require Human acceptance. "
+               "Document scripts, including lessons.py, are allowed; rule publication still requires Human approval. "
                "Report changes needed elsewhere instead of making them."),
 }
 

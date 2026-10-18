@@ -1,6 +1,5 @@
 """Reported model usage, kept separate from context occupancy and billing."""
 from __future__ import annotations
-from collections import OrderedDict
 
 
 FIELDS = ("inputTokens", "cachedInputTokens", "outputTokens", "reasoningOutputTokens")
@@ -85,7 +84,7 @@ class UsageAccumulator:
         self.previous = None
         self.turns = set()
         self.discontinuities = 0
-        self.native_reports = OrderedDict()
+        self.native_reports = set()
 
     def observe(self, event):
         if event.get("type") == "token.usage":
@@ -112,10 +111,8 @@ class UsageAccumulator:
                     self.discontinuities += 1
                     delta = latest
             self.previous = total
-            # Retain a bounded replay window without retaining conversation content.
-            self.native_reports[identity] = None
-            if len(self.native_reports) > 256:
-                self.native_reports.popitem(last=False)
+            # Keep report identities for the whole attempt; old replays are not new usage.
+            self.native_reports.add(identity)
         elif event.get("type") == "turn.completed":
             delta = counts(event.get("usage"), CLI_FIELDS)
             if delta is None:

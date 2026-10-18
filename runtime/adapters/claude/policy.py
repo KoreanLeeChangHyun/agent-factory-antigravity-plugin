@@ -3,7 +3,7 @@ import json
 
 from execution import policy as execution_policy
 from storage.errors import ContractError
-from tasks import orchestrator_guard, subagent_guard
+from hooks import orchestrator_guard, subagent_guard
 from .capabilities import EFFORTS, EFFORT_ALIASES
 
 # Nearest Claude permission mode for each Agent Factory sandbox type. Claude tool permissions are

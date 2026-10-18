@@ -22,7 +22,7 @@ class Responsibility:
 
     def register(self, c, request_id, tasks, source):
         """Atomic scope manifest: callers must explicitly name the authorized effects."""
-        from tasks.conductor_queue import digest
+        from conductor.queue import digest
         if not isinstance(tasks, list) or not tasks or not source:
             raise ContractError('obligations_invalid', 'An explicit authorized task manifest and source are required')
         req = self.store.row(c, 'SELECT * FROM requests WHERE id=?', request_id)
@@ -70,7 +70,7 @@ class Responsibility:
         return self.view(c, request_id)
 
     def instruction(self, c, request_id, text, source):
-        from tasks.conductor_queue import digest
+        from conductor.queue import digest
         iid = 'instruction-' + digest([request_id, source])[:24]
         c.execute('INSERT OR IGNORE INTO responsibility_instructions VALUES(?,?,?,?,?)', (iid, request_id, text, source, 'pending'))
         self.emit(c, request_id)

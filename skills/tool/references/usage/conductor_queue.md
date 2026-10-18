@@ -15,6 +15,13 @@ Required: `--input-json INPUT_JSON`, `--request-id REQUEST_ID`
 
 ## `role-pools`: Query canonical area role counts and exact task verification bindings
 
+## `performers`: Query each domain's one logical performer, employment, current task, sessions and resolver state
+
+## `memory-search`: Search memory within a reader's ownership scope; results point to their sources
+Required: `--reader-json READER_JSON`, `--query QUERY`
+
+## `memory-reindex`: Rebuild the memory search index from the recorded entries
+
 ## `configure-role`: Capture an existing role model and permission setting for an area
 Required: `--input-json INPUT_JSON`
 
@@ -53,7 +60,7 @@ Required: `--chat-id CHAT_ID`
 ## `quarantined`: Poison deliveries and inputs kept for operator recovery
 
 ## `requeue`: Make one quarantined delivery ready again after a fix
-Required: `--subscription {conductor,executor,ui}`, `--event-seq EVENT_SEQ`
+Required: `--subscription {conductor,executor,ui,memory}`, `--event-seq EVENT_SEQ`
 
 ## `recover`: Requeue abandoned turns and list uncertain attempts (no worker is started)
 

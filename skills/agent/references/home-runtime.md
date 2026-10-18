@@ -87,9 +87,8 @@
   (`current`, `stale` or `missing`). Freshness compares the committed state with the
   generated view and its revision snapshot. It does not assert that a live child has
   finished or that an unprocessed receipt passed.
-- Link the returned progress path from the contract's human-maintained summary. Follow
-  [Progress writing](../../document/references/progress.md) for that document's ownership.
-  Preserve contract versions, task IDs and accepted run bindings in both views.
+- Use the returned runtime progress path when reporting progress. Preserve contract
+  versions, task IDs and accepted run bindings in the report.
 - Projection failures are logged and do not block committed execution. Repair the
   current view without launching or resuming agents:
 
@@ -106,3 +105,20 @@
 - Work-only completion, receipt-processed Verification completion, Human skip,
   blocked work and cancellation remain distinct. Later direct work never rewrites
   the cancelled loop's historical outcome.
+
+<a id="diagnostic-trace"></a>
+
+## 6. Diagnostic trace
+
+- Before collecting, paging or interpreting traces, read the
+  [diagnostic contract](runtime-diagnostics.md#diagnostic-trace).
+- Trace files are private diagnostics; masking may miss secrets.
+  Publication requires separate authority.
+
+### 6.1. Full capture inventory
+
+- [Details](runtime-diagnostics.md#61-full-capture-inventory).
+
+### 6.2. Research basis
+
+- [Details](runtime-diagnostics.md#62-research-basis).
