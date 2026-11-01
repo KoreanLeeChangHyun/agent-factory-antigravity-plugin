@@ -141,8 +141,8 @@
 - Organizing/authoring tests grants no execution authority. Within the bounded request,
   Work performs necessary own checks and records commands/results or reasons not run.
   These checks never substitute for independent Verification in verification modes.
-  Main performs own checks in direct mode only; for delegated work Main compares the
-  result's evidence with Done under [result alignment](../../agent/references/orchestration.md#result-alignment)
+  Main performs own checks in direct mode only; for delegated work Main relays the
+  performer's checks under [result relay](../../agent/references/orchestration.md#result-relay)
   without reviewing implementation or rerunning tests.
   Plan-only returns its plan without implementation or execution checks.
 - Verification independently checks exact Work with the smallest authorized tests.

@@ -99,8 +99,6 @@ def main():
         install_guard()
         if orchestrator_guard.orchestrating(state, session):
             environment.update(orchestrator_guard.environment(state))
-        elif orchestrator_guard.work_profile(state, session):
-            environment.update(orchestrator_guard.profile_environment(state, session))
         # Base Gemini ids take --effort only at levels the model offers (gemini-3.1-pro: low and high).
         levels = {}
         if effort(session.get("reasoningEffort")) and str(native_model(session.get("model")) or "").startswith("gemini-"):

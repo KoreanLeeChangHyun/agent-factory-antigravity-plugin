@@ -28,6 +28,9 @@
   `docs/artifact/<domain>/<filename>` (version in the filename; no nested directories).
   Keep execution records in runtime storage and disposable scratch in run/system
   temporary storage; remove scratch when done.
+- An image-generation tool may save its file outside the workspace (Codex under
+  `~/.codex/generated_images/`); copy each image you deliver to the requested path, else
+  `docs/artifact/<domain>/<filename>`, and report that path.
 
 ### 1.3. Bounded execution
 
@@ -48,7 +51,7 @@
 
 - Every Work profile may record its own work, sources, checks, errors and judgment
   differences in its designated result/records; this grants no rule adoption/publication
-  authority. Follow the runtime's exact Explorer/Scribe path binding and tool limits.
+  authority. Every profile, Explorer and Scribe included, has the run's authorized permissions.
 - For a supplied work contract, follow Convention's [work contract](../../convention/references/work-contracts.md),
   preserving its version, task IDs and file operations, and report results against it.
 - Reuse supplied Git change context and instruction sources with their collection time and

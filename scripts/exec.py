@@ -28,7 +28,6 @@ CHANGED_PATH_PATTERN = r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\r\n]+$"
 SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 DISPATCH_ID = re.compile(r"^dispatch-[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SANDBOXES = ("read-only", "workspace-write", "danger-full-access")
-DEFAULT_SANDBOX = None
 ACTORS = ("main", "human")
 HUMAN_APPROVAL_POLICIES = ("required", "bypass")
 ACTIVE_STATES = {"accepted", "queued", "starting", "running", "cancelling"}
@@ -132,6 +131,7 @@ from runs import commands as run_commands
 from runs import launch as run_launch
 from runs import records as run_records
 from execution import requests as execution_requests
+from execution import intents
 from execution.cli import (
     JsonArgumentParser, add_project_argument, add_request_arguments, parse_args,
     validate_submit_options,
@@ -299,8 +299,6 @@ def submit(args: argparse.Namespace, new_agent: bool) -> int:
     work_profile = getattr(args, "work_profile", None)
     if work_profile is not None and role != "work":
         raise ContractError("work_profile_role_invalid", "--work-profile labels Work runs only")
-    if work_profile == "scribe" and not getattr(args, "resolved_task_workspace", None) and not (project_root / "docs").is_dir():
-        raise ContractError("scribe_docs_missing", "Scribe writes only inside docs/, which this project does not have")
     goal_action = getattr(args, "goal_action", None)
     if role == "main" and execution_options.get("taskMode") != "direct" and execution_options.get("goalMode", (stored_session or {}).get("goalMode")) is True:
         raise ContractError("goal_role_invalid", "Main Goal is direct-only; delegated execution uses Work's native Goal. Submit the captured route with Main --no-goal-mode")
@@ -349,6 +347,15 @@ def submit(args: argparse.Namespace, new_agent: bool) -> int:
         "executionPolicy": policy,
         "humanApprovalPolicy": human_approval_policy,
     }
+    intent_answer = None
+    if getattr(args, "intent_answer", None) is not None:
+        try:
+            intent_answer = intents.binding(json.loads(args.intent_answer))
+        except (ValueError, TypeError) as error:
+            raise ContractError("intent_invalid", "Invalid intent answer JSON") from error
+        if new_agent or role != "main":
+            raise ContractError("intent_invalid", "Intent answers continue an existing Main conversation")
+        dispatch_tuple["intentAnswer"] = intent_answer
     if new_agent and getattr(args, "handoff_experiment", False):
         dispatch_tuple["handoffExperiment"] = True
     if not new_agent and getattr(args, "codex", None) is not None:
@@ -580,6 +587,9 @@ def submit(args: argparse.Namespace, new_agent: bool) -> int:
                 session = {key: value for key, value in session.items() if key != "standby"}
                 session["sessionId"] = adopted
             standby_continuity = handoff.standby_continuity(_runtime, project_root, args.agent, session)
+        if intent_answer is not None:
+            locks.enter_context(file_lock(agent_path / ".intent.lock"))
+            intents.validate_answer(_runtime, project_root, args.agent, intent_answer, request_text)
         state = create_run(
             project_root=project_root,
             agent_id=args.agent,
@@ -602,6 +612,8 @@ def submit(args: argparse.Namespace, new_agent: bool) -> int:
             task_workspace_id=dispatch_tuple.get("taskWorkspaceId"),
             response_contract=getattr(args, "response_contract", None),
         )
+        if intent_answer is not None:
+            intents.receive_answer(_runtime, project_root, args.agent, intent_answer, request_text, state["runId"])
         handoff.accept_run(_runtime, project_root, session, state)
         if standby_continuity:
             state["standbyContinuity"] = standby_continuity
@@ -724,11 +736,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             response_operation.set({"schemaVersion": 1, "provider": "agent-factory", "script": "exec.py", "action": args.command})
         require_managed_platform()
         if hasattr(args, "project_root") and args.command != "rebind":
-            binding = runtime_paths.resolve(args.project_root, create=args.command == "init",
+            binding = runtime_paths.resolve(args.project_root, create=args.command == "init" or (
+                                                args.command == "docs-git" and args.docs_git_action == "apply"),
                                             home=args.runtime_home, project_id=args.project_id)
             os.environ["AGENT_FACTORY_HOME"] = binding["home"]
         if args.command in {"init", "location"}:
             emit(binding)
+            return 0
+        if args.command == "docs-git":
+            from storage import docs_git
+            if args.docs_git_action == "apply":
+                if not args.mode:
+                    raise ContractError("missing_mode", "docs-git apply needs --mode project|separate|local")
+                emit(docs_git.apply(Path(binding["projectRoot"]), Path(binding["runtimeRoot"]), args.mode))
+            elif args.docs_git_action == "unignore":
+                emit(docs_git.unignore(Path(binding["projectRoot"]), Path(binding["runtimeRoot"])))
+            else:
+                emit(docs_git.status(Path(binding["projectRoot"]), binding["runtimeRoot"] and Path(binding["runtimeRoot"])))
             return 0
         if args.command == "map-path":
             emit(runtime_paths.map_evidence(args.project_root, args.path))
@@ -759,7 +783,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             # (2: receipt fields in the structured final output); `revisionLimitPause` marks loops whose
             # public state carries the structured `pause` a Human decides on.
             # `workIsolation`: Main runs accept --work-isolation on|off and loops inherit it.
-            # `restrictedWorkProfiles`: --work-profile also accepts explore (assigned evidence docs) and scribe (docs/ only).
+            # `restrictedWorkProfiles`: --work-profile also accepts explore and scribe; the name is historical, they limit no permissions.
+            # `designerWorkProfile`: --work-profile also accepts designer, which makes images and runs only on OpenAI or Google models.
             # `taskDomain`: allocation evidence accepts an optional `domain` work-area name.
             # `projectDomains`: domains.py keeps the shared editable domain list; loop start links the allocation domain.
             # `domainMembership`: every worker belongs to a real domain; loop start refuses an unplaced worker without an
@@ -769,10 +794,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             # `conductorGuidance`: the orchestrate route instruction is the complete conductor-mode guidance; hosts add only
             # Human-selected settings (models, permissions, Work isolation) and no conductor rules of their own.
             for operation in ("submit", "send"):
-                capabilities[operation] = {**capabilities[operation], "workProfile": True, "restrictedWorkProfiles": True, "roleDirectExceptions": True,
+                capabilities[operation] = {**capabilities[operation], "workProfile": True, "restrictedWorkProfiles": True, "designerWorkProfile": True, "roleDirectExceptions": True,
                                            "taskAllocation": True, "taskDomain": True, "projectDomains": True, "domainMembership": True, "failureClass": True,
                                            "modelRecommendation": True, "providerHandoff": True, "conductorGuidance": True,
-                                           "pendingLessons": True,
+                                           "pendingLessons": True, "documentContext": True,
+                                           # `roleModelCandidates`: --agent-models captures role settings with the
+                                           # Main run; loop.py start resolves a role's candidates with a stated reason.
+                                           "roleModelCandidates": True, "intentUnderstanding": True,
                                            "responseContract": receipt_contracts.RESPONSE_CONTRACTS[-1],
                                            "revisionLimitPause": True, "taskWorkspaces": True,
                                            "workIsolation": True}
@@ -791,6 +819,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return worktrees.command(sys.modules[__name__], args)
         if args.command == "goal":
             return command_goal(args)
+        if args.command == "intent":
+            return intents.command(_runtime, args)
         if args.command == "announce-tasks":
             from tasks import announcement as task_announcement
             emit(task_announcement.prepare(sys.modules[__name__], args))

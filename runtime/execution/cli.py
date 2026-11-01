@@ -33,10 +33,13 @@ def add_read_page_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def add_request_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--intent-answer", help="Explicit question binding JSON (agentId, requestId, questionId, revision); carries no approval")
     parser.add_argument("--task-workspace-file", type=Path, help="Runtime-owned task Work Unit binding captured by loop.py")
     parser.add_argument("--task-list-file", type=Path)
     parser.add_argument("--task-id")
-    parser.add_argument("--document-context-file", type=Path, help="Explicit per-request document query, scope, required sources and selections JSON; does not grant authority")
+    context = parser.add_mutually_exclusive_group()
+    context.add_argument("--document-context-file", type=Path, help="Explicit per-request document query, scope, required sources and selections JSON; does not grant authority")
+    context.add_argument("--document-context-json", help="Inline versioned document, lesson and run evidence selections; does not grant authority")
     request = parser.add_mutually_exclusive_group()
     request.add_argument("--request-file", type=Path)
     request.add_argument("--message")
@@ -50,11 +53,12 @@ def add_request_arguments(parser: argparse.ArgumentParser) -> None:
         help="Main delegation approval policy; omitted sends preserve the session policy",
     )
     parser.add_argument("--task-mode", choices=TASK_MODES, help="Captured execution route; new Main requests default to orchestrate")
-    parser.add_argument("--work-profile", choices=WORK_PROFILES, help="Work profile Main chose (work = Expert, workLight = Worker, explore = Explorer, scribe = Scribe); selects no model; explore writes exact task-bound evidence Documents and scribe writes only inside docs/")
+    parser.add_argument("--work-profile", choices=WORK_PROFILES, help="Work profile Main chose (work = Expert, workLight = Worker, explore = Explorer, scribe = Scribe, designer = Designer); selects no model or permission")
     parser.add_argument("--model")
     parser.add_argument("--provider", choices=("codex", "claude", "antigravity"))
     parser.add_argument("--reasoning-effort", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"))
     parser.add_argument("--agent-permissions", help="Captured Human-selected role permission overrides as JSON")
+    parser.add_argument("--agent-models", help="Captured Human-selected role model settings as JSON; a role may list candidates for Main to choose from")
     parser.add_argument("--work-isolation", choices=("on", "off"), help="Captured Human-selected Work isolation toggle; on requires AI-chosen task Work Units for delegated Work")
     parser.add_argument("--fast", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--goal-mode", action=argparse.BooleanOptionalAction, default=None)
@@ -93,7 +97,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         if name == "rebind":
             location_parser.add_argument("--from-root", type=Path, required=True)
 
+    docs_git_parser = commands.add_parser("docs-git", help="Report or prepare Git handling of the managed docs/ tree")
+    add_project_argument(docs_git_parser)
+    docs_git_parser.add_argument("docs_git_action", choices=("status", "apply", "unignore"),
+                                 help="unignore removes the reported project rule that ignores docs/ in project mode")
+    docs_git_parser.add_argument("--mode", choices=("project", "separate", "local"),
+                                 help="apply: docs in the project repository, its own repository, or local only")
+
     commands.add_parser("doctor", help="Inspect host sandbox prerequisites; use doctor --help for options")
+
+    intent_parser = commands.add_parser("intent", help="Persist request understanding, linked questions and completion evidence")
+    intent_commands = intent_parser.add_subparsers(dest="intent_action", required=True)
+    for name in ("show", "update", "ask", "check"):
+        intent_command = intent_commands.add_parser(name)
+        add_project_argument(intent_command)
+        intent_command.add_argument("--agent", required=True)
+        intent_command.add_argument("--request-id", required=name != "show")
+        if name != "show":
+            intent_command.add_argument("--run-id", required=True, help="Current captured Main run providing provenance")
+            intent_command.add_argument("--expected-revision", required=True, type=int)
+            intent_command.add_argument("--input-file", required=True, type=Path)
 
     announcement_parser = commands.add_parser("announce-tasks", help="Prepare one Main-owned task list for presentation and dispatch")
     add_project_argument(announcement_parser)

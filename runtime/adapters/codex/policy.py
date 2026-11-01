@@ -230,21 +230,32 @@ def guard_hook_toml(matcher=GUARD_MATCHER):
 
 
 def guard_environment(state, session=None):
-    """Variables arming the guard for this run: orchestrate Main, Explorer/Scribe, Work rules or none."""
+    """Variables arming the guard for this run: orchestrate Main, Work rules or none."""
     if state.get("executionOptions", {}).get("handoffPreparationFor"):
         return orchestrator_guard.preparation_environment(state)
     if orchestrator_guard.orchestrating(state, session):
         return orchestrator_guard.environment(state)
-    if orchestrator_guard.work_profile(state, session):
-        return orchestrator_guard.profile_environment(state, session or {})
     if orchestrator_guard.working(state, session):
         return dict(orchestrator_guard.WORK_ENVIRONMENT)
     return {}
 
 
+def tool_server_config():
+    """The local tool server as a Codex MCP server. Its calls are approved here because the server itself
+    checks each call against the calling run's role and policy."""
+    from execution import tool_server_launch as launch
+    command = launch.command("codex")
+    prefix = "mcp_servers." + launch.CODEX_NAME + "."
+    # Codex gives MCP servers only the variables named here (see FORWARDED_ENVIRONMENT).
+    values = {"command": command[0], "args": command[1:], "env_vars": list(launch.FORWARDED_ENVIRONMENT),
+              "default_tools_approval_mode": "approve",
+              "tool_timeout_sec": launch.TOOL_TIMEOUT_SECONDS, "startup_timeout_sec": 30}
+    return [item for key, value in values.items() for item in ("-c", prefix + key + "=" + json.dumps(value))]
+
+
 def app_server(session, state):
     """App-server argv/environment with the exact role or standby preparation guard."""
-    command = [session["codex"], "app-server", "--listen", "stdio://"]
+    command = [session["codex"], "app-server", "--listen", "stdio://", *tool_server_config()]
     environment = dict(os.environ)
     environment.pop(orchestrator_guard.ENV, None)
     arming = guard_environment(state, session)

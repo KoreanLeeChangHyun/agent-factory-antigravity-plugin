@@ -9,9 +9,10 @@ import uuid
 
 from adapters.claude.capabilities import MODELS
 from adapters.claude.control import goal_commands
-from adapters.claude.policy import effort, inspection_arguments, orchestrator_arguments, orchestrator_hook_arguments, permission_arguments, profile_arguments, validate, work_subagent_arguments
+from adapters.claude.policy import (effort, inspection_arguments, orchestrator_arguments, orchestrator_hook, permission_arguments,
+                                    settings_arguments, team_tools, tool_server_arguments, validate, work_subagent_arguments,
+                                    work_subagent_hook)
 from storage.files import atomic_write, atomic_write_json, safe_read_bytes, safe_read_json
-from hooks import orchestrator_guard
 from contracts.receipts import result_only_schema
 
 TRANSPORT = Path(__file__).with_name("transport.py")
@@ -64,22 +65,24 @@ def cli_command(session, state, parts, phase=None):
                "--replay-user-messages", "--append-system-prompt-file", str(fixed), "--system-prompt-snapshot", "off",
                "--json-schema", json.dumps(schema)]
     working_directory = session.get("workingDirectory", session.get("projectRoot"))
+    guards = []
     if phase == "plan":
         command += ["--permission-mode", "plan", "--permission-prompts", "none"]
     elif state.get("role") == "main" and state.get("executionOptions", {}).get("taskMode") == "orchestrate":
-        command += orchestrator_arguments(root, directory) + orchestrator_hook_arguments()
-    elif orchestrator_guard.work_profile(state, session):
-        profile = orchestrator_guard.work_profile(state, session)
-        config = json.loads(orchestrator_guard.profile_environment(state, session)[orchestrator_guard.ENV])
-        command += profile_arguments(root, profile, config["writeRoot"] if profile == "scribe" else None,
-                                     config["writePaths"], directory)
+        command += orchestrator_arguments(root, directory)
+        guards.append(orchestrator_hook())
     else:
         command += permission_arguments(session, working_directory)
     if phase == "plan" or (command[command.index("--permission-mode") + 1] == "dontAsk"
                            and "--allowedTools" not in command):
         command += inspection_arguments(root)
+    elif command[command.index("--permission-mode") + 1] == "acceptEdits":
+        # acceptEdits prompts for every shell command, and prompts are off; the team tools stay usable.
+        command += ["--allowedTools", ",".join(team_tools(root))]
     if state.get("role") == "work":
-        command += work_subagent_arguments(restricted=bool(orchestrator_guard.work_profile(state, session)))
+        command += work_subagent_arguments()
+        guards.append(work_subagent_hook())
+    command += settings_arguments(guards) + tool_server_arguments()
     if session.get("sessionId"):
         command += ["--resume", session["sessionId"]]
     if session.get("model"):

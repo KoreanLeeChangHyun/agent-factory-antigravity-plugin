@@ -23,16 +23,22 @@ metadata:
 
 | Script / usage | Operation | Rules |
 |---|---|---|
+| [`imagegen.py`](references/usage/imagegen.md) | Generate images through Codex's native tool and existing ChatGPT login, without API keys | [Image generation](references/image-generation.md) |
 | [`archify.py`](references/usage/archify.md) | Pinned Archify JSON validation, HTML delivery and external file opening | [Archify diagrams](../convention/references/archify.md) |
-| [`exec.py`](references/usage/exec.md) | One managed run | [Agent](../agent/SKILL.md) |
+| [`exec.py`](references/usage/exec.md) | Managed runs; `intent show/update/ask/check`; `docs-git status/apply` | [Agent](../agent/SKILL.md), [Request understanding](../convention/references/interview.md#request-understanding) |
 | [`coordination.py`](references/usage/coordination.md) | Append Main-owned contract control/decision records | [Coordination records](../agent/references/role-exceptions.md#coordination-records) |
 | [`commit.py`](references/usage/commit.md) | Main-owned receipt-bound ordinary local commit | [Commit boundary](../agent/references/role-exceptions.md#ordinary-local-commit) |
 | [`loop.py`](references/usage/loop.md) | Announced Work/Verification loop | [Agent](../agent/SKILL.md) |
 | [`conductor.py`](references/usage/conductor.md) | Durable chat execution routing, observation and report delivery | [Agent](../agent/SKILL.md) |
 | [`conductor_queue.py`](references/usage/conductor_queue.md) | Multi-conductor chat queue: durable ingress, fenced turns, delivery recovery and UI feed | [Agent](../agent/SKILL.md) |
+| [`messages.py`](references/usage/messages.md) | Provider-neutral teammate list, direct messages, domain and project rooms (claims, change notices, status board) and inbox | [Team messages](../agent/references/team-messages.md) |
+| [`memory.py`](references/usage/memory.md) | Shared project memory: index, search, candidate entries, Human approval | [Shared memory](../agent/references/team-messages.md#memory) |
+| [`tool_server.py`](references/usage/tool_server.md) | Local stdio tool server each provider starts per run; offers these actions as native tools. Agents call the tools, not this script | [Native tools](../agent/references/team-messages.md#native-tools) |
 | [`domains.py`](references/usage/domains.md) | Shared project domain list and worker memberships (Human-protected) | [Task allocation](../agent/references/task-allocation.md#project-domains) |
 | [`evidence.py`](references/usage/evidence.md) | Screen capture with browser log, baseline-compared checks, shared environment holds | [Verification environment](../convention/references/verification-environment.md) |
+| [`testing.py`](references/usage/testing.md) | Test dependency detection/setup, saved environments and catalog; persistent browser/command/VS Code sessions, real actions, frozen checks and human review | [Test harness](references/testing-harness.md) |
 | [`operation_records.py`](references/usage/operation_records.md) | Read-only Task/Session/Decision/Observation lookup and record search | [Agent](../agent/SKILL.md) |
+| [`experience.py`](references/usage/experience.md) | Search project run evidence and lesson lifecycles; read originals and pin execution input | [Experience reuse](../agent/references/experience-reuse.md) |
 | [`lessons.py`](references/usage/lessons.md) | Lessons and published rules | [Lessons](../document/references/lessons-learned.md#lifecycle-cli) |
 | [`migrate_runtime_lessons.py`](references/usage/migrate_runtime_lessons.md) | Merge legacy runtime captures by signature | [Lessons](../document/references/lessons-learned.md#runtime-capture) |
 | [`sync_documents.py`](references/usage/sync_documents.md) | On-demand host synchronization | [Host sync](../document/references/host-sync.md#continuous-codex-synchronization) |

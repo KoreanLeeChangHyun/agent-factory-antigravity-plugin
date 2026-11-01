@@ -11,7 +11,7 @@
   Specification (Skill document), except error or Human/AI judgment-difference records, which use
   [Lessons Learned](lessons-learned.md). A `SKILL.md` filename does not confer authority.
 - Use the [directory layout](layout.md) for paths and [Document format](format.md)
-  for the entry document, references, assets and metadata.
+  for the entry document, references, linked artifacts and metadata.
 - Preserve actual provenance and source fidelity as applicable. Distinguish source
   evidence, observations, analysis and unresolved questions; do not present an inference
   as an accepted requirement.
@@ -28,7 +28,7 @@
 ## 2. Refined categories
 
 - Keep readable topic names without repeating the category prefix. Preserve document IDs,
-  language, authority, references, assets and actual provenance.
+  language, authority, references, linked artifacts and actual provenance.
 - Flat packages and legacy categories remain readable. Classify ambiguous `other-*` and
   `classification-*` packages from their bodies; never infer a category from the name alone.
 - Preview and explicitly apply authorized moves using the [layout migration contract](migration.md#document-layout-migration).

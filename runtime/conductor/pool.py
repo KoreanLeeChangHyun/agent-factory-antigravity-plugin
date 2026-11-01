@@ -1,4 +1,4 @@
-"""Domain/child-area admission for one logical conductor's physical instances and workers.
+"""Domain admission for one logical conductor's physical instances and workers.
 
 The queue transaction owns reservations. ManagedBackend confirms membership before
 external submission. Idle retirement releases a pool slot, never deletes a session.
@@ -22,12 +22,13 @@ CREATE TABLE IF NOT EXISTS fixed_decisions(id TEXT PRIMARY KEY, request_id TEXT 
 CREATE TABLE IF NOT EXISTS questions(id TEXT PRIMARY KEY, request_id TEXT, input_id TEXT, delegation_id TEXT,
   conductor_id TEXT, slot TEXT, epoch INTEGER, kind TEXT NOT NULL, state TEXT NOT NULL, text TEXT, source TEXT NOT NULL);
 '''
-DEFAULT = {'worker': {'domainLimit': 2, 'subdomainLimit': 1, 'reuse': 'oldest-idle', 'idleRetentionSeconds': None},
+# One area is one domain: the worker cap keeps the former single-area default of one busy worker.
+DEFAULT = {'worker': {'domainLimit': 1, 'reuse': 'oldest-idle', 'idleRetentionSeconds': None},
            # Conductor limits bound concurrent conductor turns (sessions thinking at once), not open requests: an instance
            # waiting for workers holds no slot, so an independent conversation is answered by another session meanwhile
            # (Human request 2026-10-13). Explicitly configured limits are kept.
-           'conductor': {'domainLimit': 2, 'subdomainLimit': 2, 'reuse': 'oldest-idle', 'idleRetentionSeconds': None},
-           'domains': {}, 'subdomains': {}}
+           'conductor': {'domainLimit': 2, 'reuse': 'oldest-idle', 'idleRetentionSeconds': None},
+           'domains': {}}
 
 
 def enabled(policy):
@@ -66,18 +67,18 @@ class Pool:
 
     def catalog(self):
         document = domains.read(self.store.path.parent)
-        return {'revision': document['revision'], 'domains': document['domains'], 'subdomains': document.get('subdomains', [])}
+        return {'revision': document['revision'], 'domains': document['domains']}
 
     def area(self, value):
         if not isinstance(value, dict):
-            raise ContractError('area_required', 'Select an existing domain and explicit child area before hiring')
+            raise ContractError('area_required', 'Select an existing domain before hiring')
         document = domains.read(self.store.path.parent)
         domain = next((d for d in document['domains'] if d['id'] == value.get('domainId') and not d.get('provisional')), None)
-        child = next((s for s in document.get('subdomains', []) if s['id'] == value.get('subdomainId') and s['domainId'] == value.get('domainId')), None)
-        if not domain or not child:
-            raise ContractError('area_required', 'Select an existing domain and child area; do not infer membership')
-        return {'domainId': domain['id'], 'domain': domain['name'], 'subdomainId': child['id'], 'subdomain': child['name'],
-                'writeScope': child.get('writeScope')}
+        if not domain:
+            raise ContractError('area_required', 'Select an existing domain; do not infer membership')
+        if domain.get('archived'):
+            raise ContractError('domain_archived', domains.ARCHIVED)
+        return {'domainId': domain['id'], 'domain': domain['name']}
 
     def set_area(self, c, kind, ident, area):
         c.execute('INSERT OR REPLACE INTO entity_areas VALUES(?,?,?)', (kind, ident, json.dumps(area)))
@@ -88,23 +89,33 @@ class Pool:
 
     def configuration(self, c):
         row = c.execute("SELECT value FROM meta WHERE key='employment'").fetchone()
-        return json.loads(row[0]) if row else json.loads(json.dumps(DEFAULT))
+        if not row:
+            return json.loads(json.dumps(DEFAULT))
+        # Settings stored while child areas existed keep their domain-level values only.
+        value = json.loads(row[0])
+        value.pop('subdomains', None)
+        for rule in value.values():
+            if isinstance(rule, dict):
+                rule.pop('subdomainLimit', None)
+        for rules in value.get('domains', {}).values():
+            for rule in rules.values():
+                rule.pop('subdomainLimit', None)
+        return value
 
     def configure(self, value, reference):
         if not isinstance(value, dict) or not isinstance(reference, str) or not reference.strip():
             raise ContractError('pool_policy_invalid', 'Pool configuration needs a captured setting reference')
-        if set(value) - {'worker', 'conductor', 'workLight', 'verification', 'explore', 'scribe', 'domains', 'subdomains'}:
+        if set(value) - {'worker', 'conductor', 'workLight', 'verification', 'explore', 'scribe', 'designer', 'domains'}:
             raise ContractError('pool_policy_invalid', 'Unknown employment setting')
-        def validate(config, *, child=False):
-            for role in ('worker', 'conductor', 'workLight', 'verification', 'explore', 'scribe'):
+        def validate(config):
+            for role in ('worker', 'conductor', 'workLight', 'verification', 'explore', 'scribe', 'designer'):
                 if role not in config:
                     continue
                 rule = config[role]
-                allowed = {'domainLimit', 'subdomainLimit', 'reuse', 'idleRetentionSeconds'} - ({'domainLimit'} if child else set())
-                if not isinstance(rule, dict) or set(rule) - allowed:
-                    raise ContractError('pool_policy_invalid', 'Child overrides cannot change the parent domain limit')
-                if any(k in rule and (type(rule[k]) is not int or rule[k] < 1) for k in ('domainLimit', 'subdomainLimit')):
-                    raise ContractError('pool_policy_invalid', 'Positive domain/subdomain limits required')
+                if not isinstance(rule, dict) or set(rule) - {'domainLimit', 'reuse', 'idleRetentionSeconds'}:
+                    raise ContractError('pool_policy_invalid', 'Unknown employment rule')
+                if 'domainLimit' in rule and (type(rule['domainLimit']) is not int or rule['domainLimit'] < 1):
+                    raise ContractError('pool_policy_invalid', 'Positive domain limit required')
                 if 'reuse' in rule and rule['reuse'] not in ('oldest-idle', 'newest-idle'):
                     raise ContractError('pool_policy_invalid', 'Select oldest-idle or newest-idle reuse')
                 age = rule.get('idleRetentionSeconds')
@@ -112,19 +123,17 @@ class Pool:
                     raise ContractError('pool_policy_invalid', 'Idle retention is finite nonnegative seconds or null')
         validate(value)
         catalog = self.catalog()
-        valid_ids = {'domains': {d['id'] for d in catalog['domains'] if not d.get('provisional')},
-                     'subdomains': {s['id'] for s in catalog['subdomains']}}
-        for group in ('domains', 'subdomains'):
-            if not isinstance(value.get(group, {}), dict):
-                raise ContractError('pool_policy_invalid', 'Area overrides are keyed by stable area ID')
-            for key, rules in value.get(group, {}).items():
-                if key not in valid_ids[group] or not isinstance(rules, dict) or set(rules) - {'worker', 'conductor', 'workLight', 'verification', 'explore', 'scribe'}:
-                    raise ContractError('pool_policy_invalid', 'Area override needs an existing ID and role rules')
-                validate(rules, child=group == 'subdomains')
+        valid_ids = {d['id'] for d in catalog['domains'] if not d.get('provisional')}
+        if not isinstance(value.get('domains', {}), dict):
+            raise ContractError('pool_policy_invalid', 'Domain overrides are keyed by stable domain ID')
+        for key, rules in value.get('domains', {}).items():
+            if key not in valid_ids or not isinstance(rules, dict) or set(rules) - {'worker', 'conductor', 'workLight', 'verification', 'explore', 'scribe', 'designer'}:
+                raise ContractError('pool_policy_invalid', 'Domain override needs an existing ID and role rules')
+            validate(rules)
         with self.store.tx() as c:
             current = self.configuration(c)
             for key, update in value.items():
-                if key in ('domains', 'subdomains'):
+                if key == 'domains':
                     for area_id, rules in update.items():
                         for role, values in rules.items():
                             current[key].setdefault(area_id, {}).setdefault(role, {}).update(values)
@@ -136,8 +145,7 @@ class Pool:
 
     def rule(self, c, role, area):
         config = self.configuration(c)
-        return {**config.get(role, config['worker']), **config.get('domains', {}).get(area['domainId'], {}).get(role, {}),
-                **{k: v for k, v in config.get('subdomains', {}).get(area['subdomainId'], {}).get(role, {}).items() if k != 'domainLimit'}}
+        return {**config.get(role, config['worker']), **config.get('domains', {}).get(area['domainId'], {}).get(role, {})}
 
     def room(self, c, role, area, *, excluding=None):
         rule = self.rule(c, role, area)
@@ -148,8 +156,6 @@ class Pool:
                 members.append(json.loads(row['area']))
             if sum(a['domainId'] == area['domainId'] for a in members) >= rule['domainLimit']:
                 return 'conductor-turns:domain'
-            if sum(a['subdomainId'] == area['subdomainId'] for a in members) >= rule['subdomainLimit']:
-                return 'conductor-turns:subdomain'
             return None
         for row in c.execute("SELECT * FROM pool_members WHERE role=?", (role,)):
             agents = [row['id']] if role != 'conductor' else ['cq-' + row['id'].split('-', 1)[1] + '-' + slot for slot in ('a', 'b')]
@@ -159,11 +165,9 @@ class Pool:
         for worker in self.store.roles.native():
             profile = self.store.roles.native_profile(worker)
             if worker['agentId'] not in pooled and self.store.roles.pool_role(profile) == role and not worker.get('removed') and worker.get('domain') and worker['availability'] in ('busy','queued','waiting-human','uncertain'):
-                members.append({'domainId': worker['domain']['domainId'], 'subdomainId': None})
+                members.append({'domainId': worker['domain']['domainId']})
         if sum(a['domainId'] == area['domainId'] for a in members) >= rule['domainLimit']:
             return 'employment-limit:domain'
-        if sum(a['subdomainId'] == area['subdomainId'] for a in members) >= rule['subdomainLimit']:
-            return 'employment-limit:subdomain'
         return None
 
     def idle(self, c, role, area, signature, *, retired=False, chat_id=None):
@@ -177,10 +181,9 @@ class Pool:
                 if instance and instance['chat_id'] != chat_id and c.execute("SELECT 1 FROM requests WHERE conductor_id=? AND status NOT IN ('completed','cancelled')", (row['id'],)).fetchone():
                     continue  # An unfinished parent/question retains its chat binding.
             parent = document['assignments'].get(row['id'])
-            child = document.get('subdomainAssignments', {}).get(row['id'])
-            if (parent and parent.get('domainId') != area['domainId']) or (child and child.get('subdomainId') != area['subdomainId']):
+            if parent and parent.get('domainId') != area['domainId']:
                 continue  # A Human placement change supersedes reuse eligibility, never the recorded task area.
-            if json.loads(row['area'])['subdomainId'] == area['subdomainId'] and not any(session_busy(self.store.path.parent, agent) for agent in agents):
+            if json.loads(row['area'])['domainId'] == area['domainId'] and not any(session_busy(self.store.path.parent, agent) for agent in agents):
                 return dict(row)
         return None
 
@@ -255,7 +258,7 @@ class Pool:
         return ident
 
     def enroll_worker(self, chat_id, agent_id, declared_area, reference):
-        """Explicitly adopt a recorded idle Work session; never infer its child area or change its model/policy."""
+        """Explicitly adopt a recorded idle Work session; never infer its domain or change its model/policy."""
         from storage.files import AGENT_ID
         if not isinstance(reference, str) or not reference.strip() or not isinstance(agent_id, str) or not AGENT_ID.fullmatch(agent_id):
             raise ContractError('pool_enrollment_invalid', 'Exact agent, area and Human assignment reference required')
@@ -275,13 +278,13 @@ class Pool:
         with self.store.tx() as c:
             old = self.store.row(c, 'SELECT * FROM pool_members WHERE id=?', agent_id)
             if old:
-                if any(json.loads(old['area'])[key] != area[key] for key in ('domainId', 'subdomainId')) or old['signature'] != signature(policy, 'worker'):
+                if json.loads(old['area'])['domainId'] != area['domainId'] or old['signature'] != signature(policy, 'worker'):
                     raise ContractError('pool_session_incompatible', 'Existing pool membership remains unchanged')
                 return {'workerId': agent_id, 'area': area, 'reused': True}
             reason = self.room(c, 'worker', area)
             if reason:
                 raise ContractError('employment_limit', reason)
-            domains.assign_subdomain(self.store.path.parent, agent_id, area['domainId'], area['subdomainId'], 'human', reference)
+            domains.assign(self.store.path.parent, agent_id, area['domainId'], 'human', reference)
             self.member(c, agent_id, 'worker', area, signature(policy, 'worker'), 'idle')
             self.store.op(c, 'worker-enrolled', workerId=agent_id, reference=reference)
         return {'workerId': agent_id, 'area': area, 'reused': True}

@@ -20,7 +20,7 @@ from typing import Any, Sequence
 sys.dont_write_bytecode = True
 import exec as agent_exec
 from tasks import progress as loop_progress
-from tasks.modes import WORK_PROFILES
+from tasks.modes import WORK_PROFILES, check_designer_model
 
 
 SCHEMA_VERSION = "0.1.0"
@@ -52,6 +52,8 @@ HANDOFF_STOP_POLLS = 30
 HANDOFF_STOP_POLL_SECONDS = 0.5
 # Private systemd EnvironmentFile kept beside the loop so Restart=on-failure can reread it.
 DRIVER_ENVIRONMENT_FILE = "driver.env"
+# Control-plane stops that leave the accepted child and graph intact; `heal` may resume them.
+DRIVER_ONLY_ERRORS = {"driver_launch_failed"}
 # What a stopped loop means for its caller. `contract`: the Agent's output broke its contract; a
 # repair turn or a stronger profile can fix it. `transient`: the control plane failed; inspect and
 # reconcile, the work itself is not at fault. `provider`: the model backend failed. `environment`:
@@ -75,7 +77,7 @@ FAILURE_CLASSES = {
     },
     "environment": {
         "sandbox_unavailable", "execution_preflight_failed", "execution_policy_mismatch",
-        "provider_not_found", "codex_start_failed", "worktree_binding_changed",
+        "provider_not_found", "codex_start_failed", "worktree_binding_changed", "authentication_required",
         "task_repository_invalid", "task_repository_overlap", "parent_session_invalid",
         "parent_conversation_reset", "task_workspace_binding", "task_workspace_missing",
         "task_target_busy_timeout", "task_workspace_busy_timeout", "lock_busy_timeout",
@@ -405,6 +407,8 @@ def public_state(state: dict[str, Any], child: dict[str, Any] | None = None) -> 
         **({"draftReview": copy.deepcopy(state["draftReview"])} if state.get("draftReview") else {}),
         # Reused or new workers checked at start; absent on loops accepted before team assignment.
         **({"teamAssignment": copy.deepcopy(state["teamAssignment"])} if state.get("teamAssignment") else {}),
+        # Domain IDs linked at start (work/verification); absent on loops accepted before domain IDs were recorded.
+        **({"domainLinks": copy.deepcopy(state["domainLinks"])} if state.get("domainLinks") else {}),
         **({"dispatchHistory": copy.deepcopy(state["dispatchHistory"])} if state.get("dispatchHistory") else {}),
         **({"userRevisions": copy.deepcopy(state["userRevisions"])} if state.get("userRevisions") else {}),
         "status": state["status"],
@@ -837,7 +841,65 @@ def link_allocation_domain(args: argparse.Namespace, result: dict[str, Any]) -> 
             links[field] = domains.link_dispatch(Path(binding["runtimeRoot"]), agent, name, f"loop {result['loopId']}")
         except (agent_exec.ContractError, OSError, ValueError) as error:
             links[field] = {"error": getattr(error, "code", "domain_link_failed"), "message": str(error)}
+    record_domain_links(args, result["loopId"], name, links)
     return {**result, **links}
+
+
+def record_domain_links(args: argparse.Namespace, loop_id: str, name: str, links: dict[str, Any]) -> None:
+    """Keep the domain IDs this start linked with the loop, so views follow the ID (and later merges) rather than
+    matching the recorded name. The allocation stays as accepted; a failure here never fails the dispatch."""
+    roles = {"domainLink": "work", "verificationDomainLink": "verification"}
+    recorded = {}
+    for field, link in links.items():
+        # A worker the Human placed elsewhere runs in that domain; the record names where it actually belongs.
+        domain_id = link.get("domainId") if link.get("assigned") else link.get("protectedDomainId")
+        if isinstance(domain_id, str):
+            recorded[roles[field]] = {"domainId": domain_id, "allocationDomain": name}
+    if not recorded:
+        return
+    try:
+        path = state_path(agent_exec.resolve_project_root(args.project_root), args.work_agent, loop_id)
+        with agent_exec.file_lock(path.parent / ".loop.lock"):
+            state = agent_exec.safe_read_json(path)
+            state["domainLinks"] = recorded
+            save_loop_state(path, state)
+    except (agent_exec.ContractError, OSError, ValueError) as error:
+        print(f"Domain link record failed for {loop_id}: {error}", file=sys.stderr)
+
+
+def resolve_role_models(args, root, document, parent) -> dict[str, Any]:
+    """Apply the Human's registered role models captured with the Main run (host --agent-models).
+
+    A role with several candidates and `selection: conductor` takes the candidate Main passes with its reason; a fixed
+    role takes its own model; an explicit model Main passes always wins. Unset effort and Fast come from the chosen
+    candidate. The records are kept with the loop as selection evidence; they change no permission or route.
+    """
+    from tasks import model_candidates
+    if not parent:
+        return {}
+    captured = agent_exec.safe_read_json(agent_exec.state_file(root, parent["agentId"], parent["runId"])).get(
+        "executionOptions", {}).get("agentModels") or {}
+    if not captured:
+        return {}
+    first = next((task for task in document.get("tasks", []) if isinstance(task, dict)), {})
+    profile = getattr(args, "work_profile", None) or ((first.get("allocation") or {}).get("profile") or {}).get("id") or "work"
+    roles = [("work", profile)] + ([("verification", "verification")] if getattr(args, "verification_agent", None) else [])
+    records = {}
+    for role, setting_role in roles:
+        explicit = {"model": getattr(args, role + "_model", None), "reasoningEffort": getattr(args, role + "_reasoning_effort", None),
+                    "fast": getattr(args, role + "_fast", None)}
+        try:
+            record = model_candidates.resolve(captured, setting_role, explicit=explicit, reason=getattr(args, role + "_model_reason", None),
+                                              image_need=getattr(args, "work_image_need", None) if role == "work" else None)
+        except ValueError as error:
+            raise agent_exec.ContractError("model_choice_invalid", str(error)) from error
+        if record is None:
+            continue
+        records[role] = record
+        for field, argument in (("model", "_model"), ("reasoningEffort", "_reasoning_effort"), ("fast", "_fast")):
+            if getattr(args, role + argument, None) is None and record["selected"].get(field) is not None:
+                setattr(args, role + argument, record["selected"][field])
+    return records
 
 
 def record_model_recommendations(args, root, document, parent) -> str | None:
@@ -984,7 +1046,20 @@ def _start_loop_captured(args: argparse.Namespace) -> dict[str, Any]:
                 agent_exec.require_current_parent_conversation(root, parent)
                 task_announcement.check_submission(agent_exec.safe_read_json,
                     agent_exec.state_file(root, parent["agentId"], parent["runId"]), parent, submitted_document)
+    if work_profile == "designer" and getattr(args, "work_image_need", None) is None:
+        args.work_image_need = "image-tool"  # the Designer's work is generated images
+    # Registered role candidates resolve first, so a recommendation treats the chosen model as specified.
+    model_selection = resolve_role_models(args, root, submitted_document, parent)
     work_model_override = record_model_recommendations(args, root, submitted_document, parent)
+    if work_profile == "designer":
+        # The Designer makes images, so it runs only on an OpenAI or Google model and has no fallback to another role's
+        # model (Human request 2026-10-21, message c1c85ffb). A reused designer session keeps its checked model.
+        session_path = agent_exec.session_file(root, args.work_agent)
+        designer_model = (getattr(args, "work_model", None) or getattr(args, "model", None) or work_model_override
+                          or (agent_exec.safe_read_json(session_path).get("model") if session_path.exists() else None))
+        if not designer_model:
+            raise agent_exec.ContractError("designer_model_required", "Pass the Designer's OpenAI or Google model with --work-model; it has no fallback")
+        check_designer_model(designer_model)
     task_document, binding = task_binding.resolve(
         submitted_document, args.task_id, hashlib.sha256(request).hexdigest())
     from tasks import workspaces
@@ -996,10 +1071,6 @@ def _start_loop_captured(args: argparse.Namespace) -> dict[str, Any]:
     workspace_plan = workspace_plans.get(args.task_id, workspace_plan)
     if isolation and any(task["id"] not in workspace_plans for task in tasks) and not getattr(args, "captured_workspace_plan", None):
         raise agent_exec.ContractError("task_workspace_required", "Work isolation is on; every task requires a code or read-only workspace plan")
-    if work_profile == "scribe" and any(plan.get("mode") == "code" for plan in (*workspace_plans.values(), workspace_plan or {})):
-        # A code Work Unit is committed and merged automatically; Scribe Documents are committed only by Main with actual commit authority.
-        raise agent_exec.ContractError("scribe_draft_review_required",
-                                       "Scribe writes Documents in the shared checkout, committed only by Main with actual commit authority; use the read-only workspace plan")
     if args.task_id != tasks[0]["id"]:
         raise agent_exec.ContractError("task_order_invalid", "Submit the first task; the engine executes the whole list in order")
     validate_assignments(tasks, root, args.work_agent, args.verification_agent)
@@ -1138,7 +1209,9 @@ def _start_loop_captured(args: argparse.Namespace) -> dict[str, Any]:
                       # Captured once; every Work run of this loop is dispatched under it.
                       "responseContract": agent_exec.receipt_contracts.RESPONSE_CONTRACTS[-1],
                       # Loops started without the flag keep no profile record.
-                      **({"workProfile": work_profile} if work_profile else {})},
+                      **({"workProfile": work_profile} if work_profile else {}),
+                      # How each role's model was chosen from the Human's registered settings, with Main's reason.
+                      **({"modelSelection": model_selection} if model_selection else {})},
         # Which workers this loop reused or opened, checked under the assignment lock.
         "teamAssignment": team_assignment,
         "createdAt": created,
@@ -2257,16 +2330,7 @@ def drive_loop(args):
                 if delay is not None:
                     time.sleep(delay)
                     continue
-                with agent_exec.file_lock(path.parent / ".loop.lock"):
-                    state = agent_exec.safe_read_json(path)
-                    state.update(status="runtime-error", controlPlaneError={"code": getattr(error, "code", "driver_error"), "message": str(error)})
-                    if state.get("workflow"):
-                        task = state["workflow"]["tasks"][state["workflow"]["index"]]
-                        role = (state.get("pendingDispatch") or state.get("currentChild") or {}).get("role", "work")
-                        if state.get("phase") != "integrating":
-                            task["verificationStatus" if role == "verification" else "workStatus"] = "blocked"
-                    save_loop_state(path, state)
-                return public_state(state)
+                return stop_on_error(path, error)
             if result["status"] != "active":
                 return result
             if time.monotonic() >= next_stale_check:
@@ -2274,6 +2338,62 @@ def drive_loop(args):
                 settle_stale_child(root, result)
                 supervise(args, args.loop_id)
             time.sleep(2)
+
+
+def stop_on_error(path: Path, error: Exception) -> dict[str, Any]:
+    """Stop the loop at the exact recovery point of an error no retry can settle."""
+    with agent_exec.file_lock(path.parent / ".loop.lock"):
+        state = agent_exec.safe_read_json(path)
+        if state["status"] == "cancelled":
+            return public_state(state)
+        state.update(status="runtime-error", controlPlaneError={"code": getattr(error, "code", "driver_error"), "message": str(error)})
+        if state.get("workflow"):
+            task = state["workflow"]["tasks"][state["workflow"]["index"]]
+            role = (state.get("pendingDispatch") or state.get("currentChild") or {}).get("role", "work")
+            if state.get("phase") != "integrating":
+                task["verificationStatus" if role == "verification" else "workStatus"] = "blocked"
+        save_loop_state(path, state)
+    return public_state(state)
+
+
+def driverless(state: dict[str, Any]) -> bool:
+    """Whether the loop may still advance and only its driver can be missing: active, or stopped
+    because no driver could start while the accepted child and graph stayed intact."""
+    if state.get("status") == "active":
+        return True
+    return (state.get("status") == "runtime-error"
+            and (state.get("controlPlaneError") or {}).get("code") in DRIVER_ONLY_ERRORS)
+
+
+def heal_loop(args):
+    """Level-triggered recovery: advance a loop that has no live driver from its recorded run state.
+
+    Any observer may repeat this. It does nothing while a driver holds the loop, and it resumes only
+    a stop that lost the driver alone, so a real failure or a Human decision is never retried
+    (observed 2026-10-28: Work completed while its loop stayed `work-running` with no driver).
+    """
+    root = agent_exec.resolve_project_root(args.project_root)
+    path, state = read_state(root, args.work_agent, args.loop_id)
+    if driverless(state) and not driver_running(path):
+        with agent_exec.file_lock(path.parent / ".loop.lock"):
+            state = agent_exec.safe_read_json(path)
+            if state["status"] == "runtime-error" and driverless(state):
+                lost = state["controlPlaneError"]
+                state["recovery"] = {"code": lost["code"], "message": lost.get("message"),
+                                     "attempts": (state.get("recovery") or {}).get("attempts", 0) + 1, "observedAt": now(),
+                                     "nextAction": "Advance the same durable graph from the recorded run state"}
+                state.update(status="active", controlPlaneError=None, updatedAt=now())
+                save_loop_state(path, state)
+        if state["status"] == "active":
+            try:
+                result = reconcile_loop(args)
+            except (agent_exec.ContractError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+                if getattr(error, "code", None) not in (INTEGRATION_WAIT_ERRORS | TRANSIENT_READ_ERRORS | {"dispatch_status_unavailable"}):
+                    stop_on_error(path, error)
+            else:
+                settle_stale_child(root, result)
+                ensure_driver(args, result)
+    return status_loop(args)
 
 
 def driver_running(state_path: Path) -> bool:
@@ -2307,11 +2427,11 @@ def launch_driver(args, result):
         if value:
             arguments.extend(["--" + name.replace("_", "-"), str(value)])
     log_path = Path(result["statePath"]).parent / "driver.log"
-    if sys.platform == "linux":
-        # A new process session still belongs to Main's systemd control group. When
-        # Main ends, KillMode=control-group would otherwise kill this driver too.
-        if not agent_exec.systemd_manager_usable():
-            raise OSError("The user systemd manager is required for a durable loop driver")
+    # A new process session still belongs to Main's systemd control group. When Main ends,
+    # KillMode=control-group would kill it too, so Linux prefers its own user service. Without a
+    # usable user manager a detached session is the fallback rather than no driver at all
+    # (observed 2026-10-28: loops stopped at start); if it dies with Main, `heal` resumes the loop.
+    if sys.platform == "linux" and agent_exec.systemd_manager_usable():
         try:
             # systemd rereads EnvironmentFile on every restart, after this launcher has exited.
             environment_path = log_path.parent / DRIVER_ENVIRONMENT_FILE
@@ -2331,7 +2451,7 @@ def launch_driver(args, result):
             raise OSError(str(error)) from error
         if launched.returncode != 0:
             raise OSError("The loop driver service was not accepted: " + launched.stderr.strip())
-        return
+        return "systemd"
     with open(log_path, "ab") as log:
         if sys.platform == "win32":
             # Leave Main's kill-on-close job so the driver outlives the Main run.
@@ -2340,12 +2460,13 @@ def launch_driver(args, result):
                 try:
                     subprocess.Popen(arguments, stdin=subprocess.DEVNULL, stdout=log, stderr=log, close_fds=True,
                                      creationflags=windows_process.creation_flags(detach=detach))
-                    return
+                    return "detached"
                 except PermissionError:
                     if not detach:
                         raise
         subprocess.Popen(arguments, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                          start_new_session=True, close_fds=True)
+    return "detached"
 
 
 def build_parser() -> agent_exec.JsonArgumentParser:
@@ -2380,18 +2501,23 @@ def build_parser() -> agent_exec.JsonArgumentParser:
         start.add_argument("--" + role + "-reasoning-effort", choices=("none", "low", "medium", "high", "xhigh", "max"))
         start.add_argument("--" + role + "-fast", action=argparse.BooleanOptionalAction, default=None)
         start.add_argument("--" + role + "-execution-mode", choices=("cli-default", "workspace-write", "danger-full-access", "bypass"))
+        start.add_argument("--" + role + "-model-reason",
+                           help="Why this registered candidate fits the task; required when the role's candidates are chosen by Main")
+    start.add_argument("--work-image-need", choices=("image-tool", "code-drawing", "none"),
+                       help="image-tool: the task needs an image-generation tool (availability recorded, never inferred from a provider name); "
+                            "code-drawing: SVG, Canvas or CSS drawn in code, which needs no image tool")
     start.add_argument("--work-profile", choices=WORK_PROFILES,
-                       help="Work profile Main chose (work = Expert, workLight = Worker, explore = Explorer, scribe = Scribe); selects no model; explore writes exact task-bound evidence Documents and scribe writes only inside docs/")
+                       help="Work profile Main chose (work = Expert, workLight = Worker, explore = Explorer, scribe = Scribe, designer = Designer, OpenAI or Google models only); selects no model or permission")
     start.add_argument("--work-capability-binding-file", type=Path)
     start.add_argument("--verification-capability-binding-file", type=Path)
     start.add_argument("--max-revisions", type=int, default=DEFAULT_MAX_REVISIONS,
                        help="Work revisions per task after failed Verification before the loop stops for a Human decision; 0 is unlimited")
     start.add_argument("--receipt-recovery", choices=("auto", "manual"), default="auto",
                        help="auto gives Work one repair turn for an allowlisted receipt failure; manual stops for recover-receipt")
-    for name in ("status", "reconcile", "recover-receipt", "skip", "drive", "close", "stop-task", "refresh-progress", "extend-revisions", "answer", "steer", "revise", "retry-preparation", "review", "handoff"):
+    for name in ("status", "heal", "reconcile", "recover-receipt", "skip", "drive", "close", "stop-task", "refresh-progress", "extend-revisions", "answer", "steer", "revise", "retry-preparation", "review", "handoff"):
         command = commands.add_parser(name)
         agent_exec.add_project_argument(command)
-        if name in {"reconcile", "recover-receipt", "drive", "extend-revisions"}:
+        if name in {"heal", "reconcile", "recover-receipt", "drive", "extend-revisions"}:
             agent_exec.execution_policy.add_policy_arguments(command)
         command.add_argument("--work-agent", required=True)
         command.add_argument("--loop-id", required=True)
@@ -2490,7 +2616,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         agent_exec.response_operation.set({"schemaVersion": 1, "provider": "agent-factory", "script": "loop.py", "action": args.command})
         agent_exec.require_managed_platform()
         agent_exec.runtime_paths.resolve(args.project_root, home=args.runtime_home, project_id=args.project_id)
-        handlers = {"start": start_loop, "status": status_loop, "reconcile": reconcile_loop, "recover-receipt": recover_receipt, "skip": skip_loop, "drive": drive_loop, "close": close_loop, "stop-task": stop_task, "refresh-progress": refresh_progress, "extend-revisions": extend_revisions, "answer": answer_decision, "steer": steer_loop, "revise": revise_loop}
+        handlers = {"start": start_loop, "status": status_loop, "heal": heal_loop, "reconcile": reconcile_loop, "recover-receipt": recover_receipt, "skip": skip_loop, "drive": drive_loop, "close": close_loop, "stop-task": stop_task, "refresh-progress": refresh_progress, "extend-revisions": extend_revisions, "answer": answer_decision, "steer": steer_loop, "revise": revise_loop}
         handlers["retry-preparation"] = retry_preparation
         handlers["review"] = review_draft
         handlers["handoff"] = handoff_loop

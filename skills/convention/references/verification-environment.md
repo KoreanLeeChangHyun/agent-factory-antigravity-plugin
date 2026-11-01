@@ -11,8 +11,8 @@
   the real application, reads its logs, captures its screens, runs repeatable scenarios with
   automatic verdicts and compares checks with a baseline. It never asks the Human to look at
   what these can show (Human decision 2026-10-18).
-- This evidence is what Main compares with Done under Agent's
-  [result alignment](../../agent/references/orchestration.md#result-alignment).
+- Main relays this evidence to the Human under Agent's
+  [result relay](../../agent/references/orchestration.md#result-relay).
 
 <a id="project-record"></a>
 
@@ -36,6 +36,12 @@
 <a id="observing"></a>
 
 ## 3. Observing
+
+- **Persistent test environments:** use [`testing.py`](../../tool/references/testing-harness.md)
+  when AI and Human need the same running environment across calls. Its catalog exposes
+  the `test.start/observe/act/inspect/check/reset/review/finish` tools and per-driver
+  capabilities. A session freezes build files and expected results, retains failed
+  attempts, and reports automated checks separately from Human review.
 
 - **Screens:** `python3 <plugin-root>/scripts/evidence.py capture --target <url|file> --out <png>`
   renders with an installed Playwright and writes the browser console, page errors, failed

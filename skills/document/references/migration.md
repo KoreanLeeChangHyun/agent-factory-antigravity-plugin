@@ -46,21 +46,18 @@
   Refined never needs host synchronization. Synchronize only affected Specification sources
   through the existing host contract; this migration does not authorize host overwrite.
 
-### 1.4. Legacy operations and Scribe guards
+### 1.4. Legacy operations
 
 - Without `--storage-layout`, the existing contract-listed `--operations` preview/backup/apply
   interface remains available; `--documents-root` selects its physical file workspace too.
   No separate README catalog, database or document system is created.
-- Scribe uses the guard's own `<plugin-root>/scripts/migrate_document_paths.py` for authorized
-  contract-listed moves. Pass literal captured `--project-root` and `--documents-root`, plus
-  `--operations <CSV>` inside `docs/` or the current run. Each selected source and destination
-  must remain inside the captured document write root; symlinks and overlapping endpoints fail.
+- Contract-listed moves use `<plugin-root>/scripts/migrate_document_paths.py` with
+  `--project-root`, `--documents-root` and `--operations <CSV>`; symlinks and overlapping
+  endpoints fail.
 - Preview returns source and expected destination SHA-256 hashes, including intentional link
   adjustments. Run `--backup`, then `--apply` with the same
   `--backup-dir <current-run>/document-backups/<name>`. Apply requires the completed matching
   manifest and verified bytes. Re-run preview with that backup to check completed moves.
   Backup data cannot replace run control records, use another run or escape through symlinks.
-- Scribe's CLI checks its captured scope again at execution; a hook decision does not bind
-  mutable CSV contents. Arbitrary shell/code execution and `--storage-layout` remain forbidden
-  for Scribe. These capabilities grant no new migration, directory creation or draft acceptance
+- These capabilities grant no new migration, directory creation or draft acceptance
   authority. Storage-layout changes that update runtime lesson metadata use an authorized Work.

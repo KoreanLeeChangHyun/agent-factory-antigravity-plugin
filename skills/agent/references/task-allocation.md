@@ -9,13 +9,14 @@
   elapsed time and performer count are not complexity limits.
 - Choose role/profile separately from model, effort, Fast and permissions: explore investigates;
   workLight handles settled local changes; work handles uncertain design/integration/diagnosis;
-  scribe researches, checks sources, writes, integrates and shortens authorized Documents.
+  scribe researches, checks sources, writes, integrates and shortens authorized Documents;
+  designer creates or edits raster images with an image-generation tool, on OpenAI or Google models only.
   Independent Verification requires explicit Human request. Only Main dispatches.
   Prefer existing sessions for same-task corrections; explain
   new/reuse choice from continuity, purpose and boundaries, not elapsed time.
-- Include prerequisites, read/write scope and shared ownership in brief Scope and input
-  source/version/time in brief References. Keep unit/profile/model/session reasons in Main's run records or allocation
-  evidence, not the brief. Never claim unconfirmed results or ownership ready.
+- Keep prerequisites, read/write scope, shared ownership and unit/profile/model/session
+  reasons in the allocation evidence or Main's run records, not the brief, which follows
+  [relay](../prompt/main.md#relay). Never claim unconfirmed results or ownership ready.
 
 ### 1.2. Captured allocation and brief inputs
 
@@ -31,9 +32,8 @@
   scope; unknown cost/quality stays unknown. Read the candidate's exact detail source
   when needed and recheck its revision. Retain choice and detail-read reasons in the
   existing task/run evidence, including source/revision and unresolved constraints.
-- Forward a self-contained bounded brief with goal, completion, scope, dependencies,
-  decisions, task-relevant errors, unresolved issues and exact settings. Main's own
-  preparation errors and retries stay in Main's run records. Reference unrelated task
+- Forward the brief under [relay](../prompt/main.md#relay) with exact settings passed as
+  flags. Main's own preparation errors and retries stay in Main's run records. Reference unrelated task
   bodies/logs through their original run instead of copying them. References never
   replace required scope or permission evidence; full originals remain accessible.
 
@@ -69,7 +69,7 @@
 |---|---|
 | schemaVersion | Integer 1. Unknown fields/versions are rejected. |
 | unitReason | Nonempty independent-outcome/completion-evidence reason. |
-| profile | id: explore/workLight/work/scribe/verification; nonempty reason. Records judgment, selects no model. |
+| profile | id: explore/workLight/work/scribe/designer/verification; nonempty reason. Records judgment, selects no model. |
 | session | strategy: new/reuse; nonempty reason. Actual session uses the Agent binding. |
 | inputs | Entries: nonempty source, revision, timezone-bearing ISO capturedAt, boolean confirmed. Unresolved revisions may be explicit unknown with confirmed=false. |
 | dependencies | Same evidence fields; optional taskId must be a preceding task in this ordered list. Unknown/self/forward/duplicate IDs fail. External prerequisites use source references without local taskId. |
@@ -88,6 +88,14 @@
   performer memberships is shared by the Human (control center) and Main. Run `domains.py list` before
   choosing an allocation `domain`; reuse an existing name (current or former) for the same work area
   and create a new name only when none fits. Never invent a fixed taxonomy or infer from titles alone.
+- The list always has one `common: true` domain (default name `공통`) for work that genuinely spans
+  several areas. Use it only then, never as a fallback for work you have not classified. It cannot be
+  deleted or merged away (`domain_common_protected`) and only the Human renames it.
+- Each conductor (Main) session can carry one domain label, kept in the same list and shown and used
+  for routing in the chat. `domains.py conductors --agent <own agent ID>` lists the chat's Main
+  sessions with their labels; `domains.py label-conductor --actor ai --source <run> --agent <session>`
+  with `--name`, `--domain-id` or `--clear` sets one. Only sessions the runtime recorded can be labeled
+  (the chat opens new ones); a Human label fails with `domain_protected`.
 - With installed `submit.domainMembership: true`, every performer belongs to one real, named domain.
   There is no unclassified state: `--placeholder`/`--unclassified` fail with `domain_membership_required`,
   names meaning "no domain" (`미분류`, `unclassified`, …) fail with `domain_name_reserved`, and Main must
@@ -102,8 +110,14 @@
   such writes fail with `domain_protected` and a linked dispatch keeps going. Use `--expected-revision`
   from the last read; `domain_conflict` means reload.
 - The list is display/organization data. It never rewrites accepted allocation, taskBinding, receipts
-  or run state; a renamed domain keeps former names so recorded tasks stay linked. Delete and merge
-  are not supported, and no write may leave a performer without a domain.
+  or run state; a renamed or merged domain keeps former names so recorded tasks stay linked. No write
+  may leave a performer without a domain.
+- A domain Main creates is `proposed` until the Human accepts, renames, merges or archives it; reuse an
+  existing listed domain before creating one. Only the Human merges, archives or deletes (empty only).
+  An `archived` domain keeps its performers but refuses new placements with `domain_archived`: choose
+  another listed domain.
+- `loop.py start` records the linked IDs as `domainLinks` on the loop; views follow that ID, and a merged
+  ID follows `mergedDomains` to the domain that holds it now. The allocation name stays as accepted.
 - `list` also returns `unresolved`: performers recorded before membership was required (`unassigned`,
   a Human `legacy-unclassified` choice, an `unnamed-domain` provisional domain or a `missing-domain`),
   removed performers included. `domains.py recover [--dry-run]` places only a performer with no entry whose

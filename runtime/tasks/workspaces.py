@@ -198,6 +198,51 @@ def paths_changed(unit):
                    if name and not worktrees.operational_path(os.fsdecode(name))})
 
 
+def committed_paths(unit, tip="HEAD"):
+    """Paths committed in the unit since it last shared history with the target."""
+    fork = (worktrees.git(unit["path"], "merge-base", tip, "refs/heads/" + unit["targetBranch"], check=False).stdout.decode().strip()
+            or unit["baseCommit"])
+    names = worktrees.git(unit["path"], "diff", "--name-only", "--no-renames", "-z", fork, tip).stdout
+    return {os.fsdecode(name) for name in names.split(b"\0") if name}
+
+
+# Cache Directory Tagging Specification: a tagged directory holds only regenerable data.
+CACHE_TAG = b"Signature: 8a477f597d28d172789f06886806bc55"
+
+
+def unpreserved_files(path):
+    """Untracked, ignored or modified paths except regenerable caches that removal may discard.
+
+    Caches are tagged cache directories and PEP 3147 bytecode whose source file is present.
+    Dependency trees such as node_modules, build output and local files still block: a lockfile
+    cannot prove that an installed file is unmodified or that it came from the lockfile.
+    """
+    path = Path(path)
+    tagged = {}
+
+    def tagged_directory(directory):
+        if directory not in tagged:
+            tag = path / directory / "CACHEDIR.TAG"
+            tagged[directory] = tag.is_file() and not tag.is_symlink() and tag.read_bytes()[:len(CACHE_TAG)] == CACHE_TAG
+        return tagged[directory]
+
+    def bytecode(name):
+        parts = Path(name).parts
+        if len(parts) < 2 or parts[-2] != "__pycache__" or not name.endswith(".pyc"):
+            return False
+        # mod.cpython-312.pyc or mod.cpython-312.opt-1.pyc compiles mod.py beside __pycache__.
+        source = path.joinpath(*parts[:-2], parts[-1].split(".", 1)[0] + ".py")
+        return source.is_file()
+
+    def regenerable(name):
+        parts = Path(name).parts
+        return bytecode(name) or any(tagged_directory(Path(*parts[:index])) for index in range(1, len(parts)))
+
+    entries = worktrees.git(path, "status", "--porcelain", "-z", "--untracked-files=all", "--ignored").stdout.split(b"\0")
+    return [os.fsdecode(entry) for entry in entries
+            if entry and not (entry[:3] == b"!! " and regenerable(os.fsdecode(entry[3:])))]
+
+
 def check(unit, save, stage):
     if unit.get("checkDirectory"):
         from tasks import checks
@@ -318,10 +363,6 @@ def run_owner_evidence(runtime, run, root):
         return "uncertain"
 
 
-def run_owns_checkout(runtime, run, root):
-    return run_owner_evidence(runtime, run, root) != "inactive"
-
-
 def checkout_owners(runtime, state, checkout, *, target=False):
     root = Path(state["projectRoot"])
     parent = state.get("parentStatePath")
@@ -395,10 +436,16 @@ def integrate(runtime, state, work, receipt, save, *, cleanup_after=True):
             if any(worktrees.operational_path(os.fsdecode(name)) for name in staged.split(b"\0") if name):
                 raise ContractError("task_operational_lessons_staged", "Operational lessons are staged; preserve them locally and perform any authorized index migration directly in the document repository")
             prefix = Path(unit["relativePath"])
-            changed = {str(prefix / name) for name in names}
-            inherited = set(unit.get("mergePaths", []))
+            if "committedPaths" not in unit and unit.get("resultCommit"):
+                # Units recorded before committedPaths: the runtime's own result commit was accepted.
+                unit["committedPaths"] = sorted(str(prefix / name) for name in committed_paths(unit, unit["resultCommit"]))
+            # A commit Work made in its unit is a change too; only paths the runtime
+            # committed under an accepted receipt or conflict merge are inherited.
+            changed = {str(prefix / name) for name in names} | {str(prefix / name) for name in committed_paths(unit)}
+            inherited = set(unit.get("mergePaths", [])) | set(unit.get("committedPaths", []))
             if not changed.issubset(allowed | inherited):
-                raise ContractError("task_changes_outside_receipt", "Unreported Work Unit changes require a corrected receipt: " + ", ".join(sorted(changed - allowed)))
+                raise ContractError("task_changes_outside_receipt", "Unreported Work Unit changes require a corrected receipt: " + ", ".join(sorted(changed - allowed - inherited)))
+            unit["committedPaths"] = sorted(changed | set(unit.get("committedPaths", [])))
             if worktrees.merge_pending(unit["path"]):
                 unresolved = worktrees.git(unit["path"], "diff", "--name-only", "--diff-filter=U", "-z").stdout
                 # Conflict stages require explicit staging by Work; writing a file alone is insufficient evidence.
@@ -508,21 +555,23 @@ def cleanup_unit(runtime, state, value, unit, save):
         unit["cleanupPending"] = "active run or incomplete integration"
         save()
         return
-    if not unit.get("cleaned") and path.exists() and worktrees.git(path, "status", "--porcelain", "--untracked-files=all", "--ignored").stdout:
+    if not unit.get("cleaned") and path.exists() and unpreserved_files(path):
         unit["cleanupPending"] = "unpreserved files (including ignored files)"
         save()
         return
-    branch_exists = worktrees.git(unit["repositoryRoot"], "show-ref", "--verify", "--quiet", "refs/heads/" + unit["branch"], check=False).returncode == 0
-    if not unit.get("cleaned") and not branch_exists and not path.exists():
+    tip = worktrees.git(unit["repositoryRoot"], "rev-parse", "--verify", "--quiet", "refs/heads/" + unit["branch"], check=False).stdout.decode().strip()
+    if not unit.get("cleaned") and not tip and not path.exists():
         unit["cleaned"] = True
-    if not unit.get("cleaned") and worktrees.git(unit["repositoryRoot"], "merge-base", "--is-ancestor", "refs/heads/" + unit["branch"], "refs/heads/" + unit["targetBranch"], check=False).returncode:
+    if not unit.get("cleaned") and (not tip or worktrees.git(unit["repositoryRoot"], "merge-base", "--is-ancestor", tip, "refs/heads/" + unit["targetBranch"], check=False).returncode):
         unit["cleanupPending"] = "work branch changed after integration"
         save()
         return
     if not unit.get("cleaned"):
         if path.exists():
             worktrees.git(unit["repositoryRoot"], "worktree", "remove", str(path))
-        worktrees.git(target_checkout(unit), "branch", "-d", "--", unit["branch"])
+        # Delete only the tip proven merged above. No target checkout is needed,
+        # and a branch moved since the ancestry check is kept.
+        worktrees.git(unit["repositoryRoot"], "update-ref", "-d", "refs/heads/" + unit["branch"], tip)
         unit["cleaned"] = True
     if integration and Path(integration).exists():
         if worktrees.branch(integration) != unit["targetBranch"] or worktrees.dirty(integration) or worktrees.git(integration, "status", "--porcelain", "--untracked-files=all", "--ignored").stdout:

@@ -7,7 +7,7 @@ provides four Skills: `agent` for managed Work and Verification execution, `conv
 shared project rules, `document` for authoring and synchronizing project documents, and
 `tool`, a catalog of the plugin scripts and the Skill that owns each one.
 
-Version: `1.0.31`
+Version: `1.0.32`
 
 ## How it works
 
@@ -15,7 +15,8 @@ Version: `1.0.31`
 
 - The **Conductor** (Main) converses, plans and routes. By default it delegates every change and
   research task to a performer: **Expert** (`work`), **Worker** (`workLight`), **Explorer**
-  (`explore`) or **Scribe** (`scribe`). In direct mode it works itself.
+  (`explore`), **Scribe** (`scribe`) or **Designer** (`designer`, images on OpenAI or Google
+  models only). In direct mode it works itself.
 - A **work request** (goal, scope, Done criteria) is the only handoff to a performer; the **work
   report** returns the result, changed paths and the performer's own checks. The Conductor compares
   each report with its Done criteria before reporting, and a **Verifier** checks the work when you ask.

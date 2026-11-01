@@ -208,17 +208,13 @@
 
 ## 10. Assigned research Documents
 
-- For Explorer Document writes, use the existing selected task binding with exact
-  project-relative `documentPaths`. An accepted contract's `requiredFileOperations`
-  add/modify paths take precedence. The runtime validates and captures this assignment;
-  an ordinary prose brief without it stays project read-only.
-- Assign each file to one owner. Explorer directly manages its assigned evidence/research
-  package; scribe integrates/restructures shared canonical Documents. Use one owner or the
-  managed catalog CLI for shared summaries and catalogs. Do not assign code/configuration,
-  approved Specification rules or another owner's documents to Explorer.
-- A public profile ID selects no model or broader permissions. See the owning
-  [profile boundary](execution-modes.md#role-specific-model-overrides) for allowed locations,
-  own records, path/symlink checks and publication exclusions.
+- Exact Document assignments use the existing selected task binding with project-relative
+  `documentPaths`. An accepted contract's `requiredFileOperations` add/modify paths take
+  precedence. The runtime validates and captures this assignment.
+- Assign each file to one owner. Use one owner or the managed catalog CLI for shared
+  summaries and catalogs.
+- A public profile ID selects no model or permission; every profile runs with the run's
+  authorized permissions ([profile boundary](execution-modes.md#role-specific-model-overrides)).
 
 
 <a id="allocation"></a>

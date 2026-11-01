@@ -83,8 +83,8 @@
   - `provider`: model backend. Report its message; dispatch again only when the Human asks.
   - `environment`: the host or policy must change first. Stop and report the cause.
   - `human`: pass the decision to the Human. Anything else is `unknown`.
-  - The one `workLight` or `scribe` to `work` retry applies only to `contract` or no class;
-    a failed `explore` run is reported, not retried with write access.
+  - The one `workLight`, `scribe` or `explore` to `work` retry applies only to `contract` or no class.
+    A failed `designer` attempt retries as `designer`, never as `work`, whose model may have no image generator.
 - `task_repository_invalid` and `parent_session_invalid` are environment/binding failures,
   not Work failures. Preserve the accepted loop, results and parent identity. Do not
   switch `--project-root`, strip the managed parent environment or repeatedly assign a

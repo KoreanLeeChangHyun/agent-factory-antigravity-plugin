@@ -9,6 +9,10 @@ Every write is serialized by one project lock and may carry the revision the wri
 instead of overwriting a newer edit. Entries written before membership was required (no entry, a Human
 "unclassified" choice, an unnamed provisional domain) are kept as they are and reported as unresolved until a worker
 is placed explicitly or recovered from its own recorded allocation domain.
+Every project also has one common domain (Human decision 2026-10-29): the real area for work that spans several
+domains, not a fallback for unclassified work. It exists from the first read and is never deleted or merged away.
+Main ("conductor") sessions carry a domain label in the same store, so the conductor and the control center
+read and write one record; the same Human protection applies to those labels.
 """
 from __future__ import annotations
 
@@ -33,11 +37,37 @@ HISTORY_LIMIT = 500
 NO_DOMAIN_NAMES = frozenset({"미분류", "분류 없음", "무소속", "미지정", "unclassified", "uncategorized", "unassigned", "none"})
 CATCH_ALL_NAMES = frozenset({"기본", "기타", "일반", "default", "misc", "miscellaneous", "other", "others", "general"})
 MEMBERSHIP_REQUIRED = "Every worker belongs to a real named domain; create or reuse one and place the worker in it"
+# The common domain's fixed ID and default name: a project read before any write already lists it under this ID.
+COMMON_ID = "domain-000000000000"
+COMMON_NAME = "공통"
+COMMON_KEPT = "The common domain is kept in every project; rename it or archive it instead"
+# A chat's conductor sessions: its first Main session and the extra sessions the host opens as `<first>-c<N>`.
+CONDUCTOR_LANE = re.compile(r"^(?P<primary>.+?)(?:-c[1-9][0-9]*)?$")
 
 
 def empty():
     return {"schemaVersion": SCHEMA_VERSION, "kind": "project-domains", "revision": 0, "domains": [], "assignments": {},
-            "removedWorkers": {}, "history": []}
+            "removedWorkers": {}, "conductors": {}, "history": []}
+
+
+def _with_common(document):
+    """Mark or add the project's common domain. An existing domain with the common name becomes it; otherwise the
+    default is listed under the fixed ID and is stored with the next write. Never creates a second one."""
+    if any(item.get("common") for item in document["domains"]):
+        return document
+    named = next((item for item in document["domains"]
+                  if not item.get("provisional") and key(item["name"]) == key(COMMON_NAME)), None)
+    if named is not None:
+        named["common"] = True
+        return document
+    by = {"actor": "system", "at": now(), "source": "default common domain"}
+    document["domains"].insert(0, {"id": COMMON_ID, "name": COMMON_NAME, "aliases": [], "common": True,
+                                   "createdBy": by, "nameSetBy": by})
+    return document
+
+
+def common(document, domain_id):
+    return any(item["id"] == domain_id and item.get("common") for item in document["domains"])
 
 
 def name_of(value):
@@ -70,12 +100,24 @@ def _actor(actor, source):
 def read(runtime_root: Path):
     path = Path(runtime_root) / FILE
     if not path.exists():
-        return empty()
+        return _with_common(empty())
     value = safe_read_json(path)
     if not isinstance(value, dict) or value.get("schemaVersion") != SCHEMA_VERSION or value.get("kind") != "project-domains":
         raise ContractError("domain_store_invalid", "Unsupported project domain store")
     value.setdefault("removedWorkers", {})  # Stores written before worker removal existed.
+    value.setdefault("conductors", {})  # Stores written before conductor session labels existed.
+    _with_common(value)
+    # Operating-session limits were removed (Human decision 2026-10-29); the next write drops their stored fields.
+    value.pop("sessionPools", None)
+    for domain in value.get("domains", []):
+        domain.pop("maxSessions", None)
     return value
+
+
+def ensure_active(runtime_root, agent_id):
+    """Refuse to start a run for a worker the Human removed from the list; its records stay."""
+    if agent_id in read(runtime_root)["removedWorkers"]:
+        raise ContractError("worker_removed", "This performer was removed from the operating roster")
 
 
 def find(document, name):
@@ -89,9 +131,29 @@ def find(document, name):
     return None
 
 
+def resolve(document, domain_id):
+    """The listed domain a recorded ID belongs to now, following merges; None for an unknown or deleted ID."""
+    seen = set()
+    while domain_id not in seen:
+        seen.add(domain_id)
+        domain = next((item for item in document["domains"] if item["id"] == domain_id), None)
+        if domain:
+            return domain
+        domain_id = (document.get("mergedDomains", {}).get(domain_id) or {}).get("mergedInto")
+    return None
+
+
 def placeable(document, domain_id):
     """A real domain a worker may belong to: it exists and has a name (legacy provisional domains do not)."""
     return any(item["id"] == domain_id and not item.get("provisional") for item in document["domains"])
+
+
+def archived(document, domain_id):
+    """An archived domain keeps its workers and records but accepts no new placement."""
+    return any(item["id"] == domain_id and item.get("archived") for item in document["domains"])
+
+
+ARCHIVED = "This domain is archived; place the worker in another listed domain or ask the Human to restore it"
 
 
 def _keep_memberships(previous, document):
@@ -102,7 +164,7 @@ def _keep_memberships(previous, document):
             raise ContractError("domain_membership_required", MEMBERSHIP_REQUIRED)
     if set(previous["assignments"]) - set(document["assignments"]):
         raise ContractError("domain_membership_required", "A placement is moved to another domain, never removed")
-    held = {item.get("domainId") for item in previous["assignments"].values()}
+    held = {item.get("domainId") for item in document["assignments"].values()}  # A merge moves workers out first.
     if held & ({item["id"] for item in previous["domains"]} - {item["id"] for item in document["domains"]}):
         raise ContractError("domain_in_use", "This domain still holds workers; move them to another domain first")
 
@@ -131,26 +193,6 @@ def _event(document, by, action, **fields):
     document["history"].append({**by, "action": action, **fields})
 
 
-def set_capacity(runtime_root, domain_id, maximum, actor, source, expected_revision=None):
-    from conductor.session_pool import limit, observe, operating
-    limit({"maxSessions": maximum})
-    if actor != "human":
-        raise ContractError("domain_protected", "Only the Human changes operating-session limits")
-    by = _actor(actor, source)
-
-    def change(document):
-        domain = next((item for item in document["domains"] if item["id"] == domain_id), None)
-        if domain is None:
-            raise ContractError("domain_missing", "Unknown domain")
-        entries = observe(runtime_root, document)
-        document.setdefault("sessionPools", {})[domain_id] = operating(document, domain, entries)
-        domain["maxSessions"] = maximum
-        document["sessionPools"][domain_id] = operating(document, domain, entries)
-        _event(document, by, "capacity", domainId=domain_id, maxSessions=maximum)
-        return {"domainId": domain_id}
-    return _mutate(runtime_root, expected_revision, change)
-
-
 def create(runtime_root, name, actor, source, expected_revision=None):
     """Create a domain with a real work-area name; for Main ("ai") an existing matching name is reused."""
     name, by = _real_name(name, actor), _actor(actor, source)
@@ -160,12 +202,20 @@ def create(runtime_root, name, actor, source, expected_revision=None):
         if existing:
             if actor == "human":
                 raise ContractError("domain_name_taken", f"A domain named {existing['name']!r} already exists")
+            if existing.get("archived"):
+                raise ContractError("domain_archived", ARCHIVED)
             return {"domainId": existing["id"], "reused": True}
-        domain = {"id": "domain-" + uuid.uuid4().hex[:12], "name": name, "aliases": [], "createdBy": by, "nameSetBy": by}
-        document["domains"].append(domain)
-        _event(document, by, "create", domainId=domain["id"], name=name)
-        return {"domainId": domain["id"], "reused": False}
+        return {"domainId": _add_domain(document, name, actor, by), "reused": False}
     return _mutate(runtime_root, expected_revision, change)
+
+
+def _add_domain(document, name, actor, by):
+    domain = {"id": "domain-" + uuid.uuid4().hex[:12], "name": name, "aliases": [], "createdBy": by, "nameSetBy": by}
+    if actor == "ai":
+        domain["proposed"] = True  # Usable at once; the Human accepts, merges or archives it later.
+    document["domains"].append(domain)
+    _event(document, by, "create", domainId=domain["id"], name=name)
+    return domain["id"]
 
 
 def rename(runtime_root, domain_id, name, actor, source, expected_revision=None):
@@ -178,10 +228,14 @@ def rename(runtime_root, domain_id, name, actor, source, expected_revision=None)
             raise ContractError("domain_missing", "Unknown domain")
         if actor == "ai" and domain["nameSetBy"]["actor"] == "human":
             raise ContractError("domain_protected", "The Human named this domain; only the Human renames it")
+        if actor == "ai" and domain.get("common"):
+            raise ContractError("domain_protected", "Only the Human renames the common domain")
         other = find(document, name)
         if other and other["id"] != domain_id:
             raise ContractError("domain_name_taken", f"Another domain is already named {other['name']!r}; domains are not merged")
         provisional = bool(domain.pop("provisional", False))
+        if actor == "human":
+            domain.pop("proposed", None)  # Naming it is the Human's review of a domain Main proposed.
         if domain["name"] == name and not provisional:
             return {"domainId": domain_id}
         # A provisional name is not a former name: it would link every other unnamed domain's tasks.
@@ -209,13 +263,189 @@ def assign(runtime_root, agent_id, domain_id, actor, source, expected_revision=N
         if not placeable(document, domain_id):
             raise ContractError("domain_name_required", "Name this domain before placing workers in it")
         current = document["assignments"].get(agent_id)
+        if current and current["domainId"] == domain_id and (actor == "ai" or current["setBy"]["actor"] == "human"):
+            return {"agentId": agent_id, "domainId": domain_id}  # Already there; the Human placement stays intact.
         if actor == "ai" and current and current["setBy"]["actor"] == "human":
             raise ContractError("domain_protected", "The Human placed this worker; only the Human moves it")
-        if current and current["domainId"] == domain_id and (actor == "ai" or current["setBy"]["actor"] == "human"):
-            return {"agentId": agent_id, "domainId": domain_id}
+        if archived(document, domain_id):
+            raise ContractError("domain_archived", ARCHIVED)
         document["assignments"][agent_id] = {"domainId": domain_id, "setBy": by}
         _event(document, by, "assign", agentId=agent_id, domainId=domain_id, previous=(current or {}).get("domainId"))
         return {"agentId": agent_id, "domainId": domain_id}
+    return _mutate(runtime_root, expected_revision, change)
+
+
+def conductor_sessions(runtime_root, agent_id):
+    """The recorded Main sessions of one chat: its first session and the `<first>-c<N>` sessions the host opened,
+    found from any one of them. Only sessions the runtime recorded with the Main role are listed."""
+    if not isinstance(agent_id, str) or not AGENT_ID.fullmatch(agent_id):
+        raise ContractError("domain_agent_invalid", "Invalid conductor agent ID")
+    primary = CONDUCTOR_LANE.fullmatch(agent_id)["primary"]
+    lane = re.compile(re.escape(primary) + r"(?:-c(?P<index>[1-9][0-9]*))?")
+    found = []
+    agents = Path(runtime_root) / "agents"
+    for path in agents.iterdir() if agents.is_dir() else ():
+        match = lane.fullmatch(path.name)
+        if match and _main_session(runtime_root, path.name):
+            found.append((int(match["index"] or 0), path.name))
+    return primary, [name for _, name in sorted(found)]
+
+
+def _main_session(runtime_root, agent_id):
+    try:
+        return safe_read_json(Path(runtime_root) / "agents" / agent_id / "session.json").get("role") == "main"
+    except (ContractError, OSError, ValueError, AttributeError):
+        return False
+
+
+def conductors(runtime_root, agent_id):
+    """One chat's conductor sessions with the domain each is labeled with (following merges)."""
+    document = read(runtime_root)
+    primary, sessions = conductor_sessions(runtime_root, agent_id)
+    listed = []
+    for session in sessions:
+        label = document["conductors"].get(session)
+        domain = resolve(document, label["domainId"]) if label else None
+        listed.append({"agentId": session, **({"domainId": domain["id"], "name": domain["name"], "setBy": label["setBy"]}
+                                               if domain else {})})
+    return {"primary": primary, "sessions": listed, "revision": document["revision"]}
+
+
+def label_conductor(runtime_root, agent_id, actor, source, domain_id=None, name=None, clear=False, expected_revision=None):
+    """Label a recorded Main session with one domain (by ID, or by name: reused, or created as for `create`), or clear
+    the label. The label names the session in the chat and its routing; it changes no run, task or worker placement.
+    Main cannot change or clear a label the Human set."""
+    if sum((domain_id is not None, name is not None, bool(clear))) != 1:
+        raise ContractError("domain_label_invalid", "Give exactly one of a domain ID, a domain name or clear")
+    if not isinstance(agent_id, str) or not AGENT_ID.fullmatch(agent_id) or not _main_session(runtime_root, agent_id):
+        raise ContractError("conductor_unknown", "Not a recorded Main session of this project; list them with conductors")
+    by = _actor(actor, source)
+    name = _real_name(name, actor) if name is not None else None
+
+    def change(document):
+        current = document["conductors"].get(agent_id)
+        if clear:
+            target = None
+        elif name is not None:
+            found = find(document, name)
+            target = found["id"] if found else None
+        else:
+            if not any(item["id"] == domain_id for item in document["domains"]):
+                raise ContractError("domain_missing", "Unknown domain")
+            target = domain_id
+        if current and current["domainId"] == target and target is not None and (actor == "ai" or current["setBy"]["actor"] == "human"):
+            return {"agentId": agent_id, "domainId": target}  # Already labeled so; a Human label stays the Human's.
+        if actor == "ai" and current and current["setBy"]["actor"] == "human":
+            raise ContractError("domain_protected", "The Human labeled this conductor session; only the Human changes it")
+        if clear:
+            if current:
+                del document["conductors"][agent_id]
+                _event(document, by, "unlabel-conductor", agentId=agent_id, previous=current["domainId"])
+            return {"agentId": agent_id, "domainId": None}
+        if target is None:
+            target = _add_domain(document, name, actor, by)
+        if not placeable(document, target):
+            raise ContractError("domain_name_required", "Name this domain before labeling sessions with it")
+        if archived(document, target):
+            raise ContractError("domain_archived", "This domain is archived; choose another listed domain or ask the Human to restore it")
+        document["conductors"][agent_id] = {"domainId": target, "setBy": by}
+        _event(document, by, "label-conductor", agentId=agent_id, domainId=target, previous=(current or {}).get("domainId"))
+        return {"agentId": agent_id, "domainId": target}
+    return _mutate(runtime_root, expected_revision, change)
+
+
+def _human_domain(document, domain_id, actor):
+    if actor != "human":
+        raise ContractError("domain_protected", "Only the Human reviews, merges, archives or deletes domains")
+    domain = next((item for item in document["domains"] if item["id"] == domain_id), None)
+    if domain is None:
+        raise ContractError("domain_missing", "Unknown domain")
+    return domain
+
+
+def accept(runtime_root, domain_id, actor, source, expected_revision=None):
+    """Human only: accept a domain Main proposed as part of the project's list."""
+    by = _actor(actor, source)
+
+    def change(document):
+        domain = _human_domain(document, domain_id, actor)
+        if domain.pop("proposed", None):
+            _event(document, by, "accept", domainId=domain_id)
+        return {"domainId": domain_id}
+    return _mutate(runtime_root, expected_revision, change)
+
+
+def archive(runtime_root, domain_id, actor, source, expected_revision=None, restore=False):
+    """Human only: archive (or restore) a domain. Its workers, aliases and records stay; new placements are refused."""
+    by = _actor(actor, source)
+
+    def change(document):
+        domain = _human_domain(document, domain_id, actor)
+        if restore:
+            if domain.pop("archived", None):
+                _event(document, by, "restore", domainId=domain_id)
+        elif not domain.get("archived"):
+            domain.pop("proposed", None)
+            domain["archived"] = by
+            _event(document, by, "archive", domainId=domain_id)
+        return {"domainId": domain_id}
+    return _mutate(runtime_root, expected_revision, change)
+
+
+def merge(runtime_root, domain_id, target_id, actor, source, expected_revision=None):
+    """Human only: move every worker of a domain into another and keep its names as the target's former names, so
+    tasks recorded under either name stay linked. The merged domain leaves the list; execution records are unchanged."""
+    by = _actor(actor, source)
+
+    def change(document):
+        domain = _human_domain(document, domain_id, actor)
+        target = _human_domain(document, target_id, actor)
+        if target_id == domain_id:
+            raise ContractError("domain_merge_invalid", "Select a different domain to merge into")
+        if domain.get("common"):
+            raise ContractError("domain_common_protected", COMMON_KEPT)
+        if not placeable(document, target_id) or target.get("archived"):
+            raise ContractError("domain_merge_invalid", "Merge into a named domain that is not archived")
+        moved = sorted(agent for agent, item in document["assignments"].items() if item.get("domainId") == domain_id)
+        for agent in moved:
+            document["assignments"][agent] = {"domainId": target_id, "setBy": by}
+        relabeled = sorted(agent for agent, item in document["conductors"].items() if item.get("domainId") == domain_id)
+        for agent in relabeled:
+            document["conductors"][agent] = {"domainId": target_id, "setBy": by}
+        names = ([] if domain.get("provisional") else [domain["name"]]) + domain.get("aliases", [])
+        known = {key(target["name"])} | {key(alias) for alias in target["aliases"]}
+        for name in names:
+            if key(name) not in known:
+                target["aliases"].append(name)
+                known.add(key(name))
+        document["domains"] = [item for item in document["domains"] if item["id"] != domain_id]
+        # The merged ID stays resolvable: tasks that recorded it follow mergedInto to the domain that holds it now.
+        merged = document.setdefault("mergedDomains", {})
+        merged[domain_id] = {"name": domain["name"], "aliases": domain.get("aliases", []), "mergedInto": target_id, "mergedBy": by}
+        for record in merged.values():
+            if record["mergedInto"] == domain_id:
+                record["mergedInto"] = target_id
+        _event(document, by, "merge", domainId=domain_id, targetId=target_id, name=domain["name"], movedAgents=moved,
+               relabeledConductors=relabeled)
+        return {"domainId": target_id, "mergedDomainId": domain_id, "movedAgents": moved, "relabeledConductors": relabeled}
+    return _mutate(runtime_root, expected_revision, change)
+
+
+def delete(runtime_root, domain_id, actor, source, expected_revision=None):
+    """Human only: delete a domain no worker has ever been placed in; a domain with workers is merged or archived."""
+    by = _actor(actor, source)
+
+    def change(document):
+        domain = _human_domain(document, domain_id, actor)
+        if domain.get("common"):
+            raise ContractError("domain_common_protected", COMMON_KEPT)
+        if any(item.get("domainId") == domain_id for item in document["assignments"].values()):
+            raise ContractError("domain_in_use", "This domain holds workers; merge or archive it instead")
+        if any(item.get("domainId") == domain_id for item in document["conductors"].values()):
+            raise ContractError("domain_in_use", "Conductor sessions carry this domain as their label; relabel them or merge it instead")
+        document["domains"] = [item for item in document["domains"] if item["id"] != domain_id]
+        _event(document, by, "delete", domainId=domain_id, name=domain["name"])
+        return {"domainId": domain_id, "deleted": True}
     return _mutate(runtime_root, expected_revision, change)
 
 
@@ -386,54 +616,3 @@ def remove_worker(runtime_root, agent_id, actor, source, expected_revision=None)
         _event(document, by, "remove-worker", agentId=agent_id)
         return {"agentId": agent_id, "removed": True}
     return _mutate(runtime_root, expected_revision, change)
-
-
-def subdomain(runtime_root, domain_id, name, actor, source, expected_revision=None, write_scope=None):
-    """Add an explicit child area without migrating domains or legacy memberships."""
-    name, by = name_of(name), _actor(actor, source)
-    if write_scope is not None:
-        from conductor.intents import scope_paths
-        scope_paths(write_scope)
-
-    def change(document):
-        if not placeable(document, domain_id):
-            raise ContractError('domain_missing', 'Select an existing named domain before defining its child area')
-        children = document.setdefault('subdomains', [])
-        existing = next((item for item in children if item['domainId'] == domain_id and key(item['name']) == key(name)), None)
-        if existing:
-            if write_scope is not None and existing.get('writeScope') != write_scope:
-                if existing['setBy']['actor'] == 'human' and actor != 'human':
-                    raise ContractError('domain_protected', 'Only the Human changes this child area scope')
-                existing.update(writeScope=write_scope, setBy=by)
-            return {'subdomain': copy.deepcopy(existing)}
-        item = {'id': 'subdomain-' + uuid.uuid4().hex[:12], 'domainId': domain_id, 'name': name, 'setBy': by,
-                'writeScope': write_scope}
-        children.append(item)
-        _event(document, by, 'subdomain-create', domainId=domain_id, subdomainId=item['id'], name=name)
-        return {'subdomain': copy.deepcopy(item)}
-    return _mutate(runtime_root, expected_revision, change)
-
-
-def assign_subdomain(runtime_root, agent_id, domain_id, subdomain_id, actor, source):
-    """Keep the parent placement and its protection; new managed hires are assigned before submit."""
-    if not isinstance(agent_id, str) or not AGENT_ID.fullmatch(agent_id):
-        raise ContractError('domain_agent_invalid', 'Invalid worker agent ID')
-    by = _actor(actor, source)
-
-    def change(document):
-        child = next((item for item in document.get('subdomains', []) if item['id'] == subdomain_id and item['domainId'] == domain_id), None)
-        if not child or not placeable(document, domain_id):
-            raise ContractError('domain_missing', 'Select an existing domain and child area')
-        parent = document['assignments'].get(agent_id)
-        children = document.setdefault('subdomainAssignments', {})
-        old = children.get(agent_id)
-        if actor == 'ai' and ((parent and parent['setBy']['actor'] == 'human' and (parent['domainId'] != domain_id or old is None))
-                              or (old and old['setBy']['actor'] == 'human' and old['subdomainId'] != subdomain_id)):
-            raise ContractError('domain_protected', 'The Human placed this worker; its placement stays intact')
-        if not parent or parent['domainId'] != domain_id:
-            document['assignments'][agent_id] = {'domainId': domain_id, 'setBy': by}
-        if not old or old['subdomainId'] != subdomain_id:
-            children[agent_id] = {'domainId': domain_id, 'subdomainId': subdomain_id, 'setBy': by}
-            _event(document, by, 'subdomain-assign', agentId=agent_id, domainId=domain_id, subdomainId=subdomain_id)
-        return {'agentId': agent_id, 'domainId': domain_id, 'subdomainId': subdomain_id}
-    return _mutate(runtime_root, None, change)

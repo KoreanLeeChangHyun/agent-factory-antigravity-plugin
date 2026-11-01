@@ -31,6 +31,7 @@ Required: `--request-file REQUEST_FILE`, `--work-agent WORK_AGENT`
 - `--work-reasoning-effort {none,low,medium,high,xhigh,max}`
 - `--work-fast | --no-work-fast`
 - `--work-execution-mode {cli-default,workspace-write,danger-full-access,bypass}`
+- `--work-model-reason WORK_MODEL_REASON`: Why this registered candidate fits the task; required when the role's candidates are chosen by Main
 - `--verification-model VERIFICATION_MODEL`
 - `--verification-provider {codex,claude,antigravity}`
 - `--verification-execution-policy-file VERIFICATION_EXECUTION_POLICY_FILE`: Exact captured role policy; preserves sandbox independently from Human approval
@@ -38,7 +39,9 @@ Required: `--request-file REQUEST_FILE`, `--work-agent WORK_AGENT`
 - `--verification-reasoning-effort {none,low,medium,high,xhigh,max}`
 - `--verification-fast | --no-verification-fast`
 - `--verification-execution-mode {cli-default,workspace-write,danger-full-access,bypass}`
-- `--work-profile {work,workLight,explore,scribe}`: Work profile Main chose (work = Expert, workLight = Worker, explore = Explorer, scribe = Scribe); selects no model; explore writes exact task-bound evidence Documents and scribe writes only inside docs/
+- `--verification-model-reason VERIFICATION_MODEL_REASON`: Why this registered candidate fits the task; required when the role's candidates are chosen by Main
+- `--work-image-need {image-tool,code-drawing,none}`: image-tool: the task needs an image-generation tool (availability recorded, never inferred from a provider name); code-drawing: SVG, Canvas or CSS drawn in code, which needs no image tool
+- `--work-profile {work,workLight,explore,scribe,designer}`: Work profile Main chose (work = Expert, workLight = Worker, explore = Explorer, scribe = Scribe, designer = Designer, OpenAI or Google models only); selects no model or permission
 - `--work-capability-binding-file WORK_CAPABILITY_BINDING_FILE`
 - `--verification-capability-binding-file VERIFICATION_CAPABILITY_BINDING_FILE`
 - `--max-revisions MAX_REVISIONS`: Work revisions per task after failed Verification before the loop stops for a Human decision; 0 is unlimited
@@ -46,6 +49,14 @@ Required: `--request-file REQUEST_FILE`, `--work-agent WORK_AGENT`
 
 ## `status`
 Required: `--work-agent WORK_AGENT`, `--loop-id LOOP_ID`
+
+## `heal`
+Required: `--work-agent WORK_AGENT`, `--loop-id LOOP_ID`
+- `--sandbox {read-only,workspace-write,danger-full-access}`
+- `--execution-policy-file EXECUTION_POLICY_FILE`
+- `--approval-policy {never,on-request,untrusted,on-failure}`
+- `--network-access | --no-network-access`
+- `--writable-root WRITABLE_ROOT`
 
 ## `reconcile`
 Required: `--work-agent WORK_AGENT`, `--loop-id LOOP_ID`
@@ -134,7 +145,7 @@ Required: `--role {work,verification}`
 - `--model MODEL`: Exact model; workers are compared one by one, never merged by model name
 - `--reasoning-effort {none,low,medium,high,xhigh,max}`
 - `--fast | --no-fast`
-- `--work-profile {work,workLight,explore,scribe}`
+- `--work-profile {work,workLight,explore,scribe,designer}`
 - `--human-approval-policy {required,bypass}`
 - `--sandbox SANDBOX`
 - `--domain DOMAIN`: Allocation domain name; same-domain workers are listed first, others stay eligible

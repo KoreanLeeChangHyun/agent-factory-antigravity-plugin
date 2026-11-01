@@ -156,7 +156,7 @@ def _systemd_command(command: Sequence[str]) -> subprocess.CompletedProcess[str]
 
 def systemd_environment_supported(environment: dict[str, str] | None = None) -> bool:
     values = os.environ if environment is None else environment
-    return hasattr(os, "memfd_create") and all(
+    return all(
         ENVIRONMENT_NAME.fullmatch(name) is not None
         and "\0" not in value
         and "\n" not in value
@@ -169,9 +169,28 @@ def cgroup_v2_available() -> bool:
     return (CGROUP_ROOT / "cgroup.controllers").is_file()
 
 
+def restore_user_manager_environment() -> None:
+    """Fill in the user manager's address when a host stripped it (Codex starts MCP servers with a
+    minimal environment). Only this user's own runtime directory and bus socket qualify, as logind
+    creates them; values already set are never changed."""
+    if sys.platform != "linux" or not hasattr(os, "getuid"):
+        return
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+    try:
+        owned = runtime.is_dir() and runtime.stat().st_uid == os.getuid()
+    except OSError:
+        return
+    if not owned:
+        return
+    os.environ.setdefault("XDG_RUNTIME_DIR", str(runtime))
+    if (runtime / "bus").is_socket():
+        os.environ.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={runtime / 'bus'}")
+
+
 def systemd_manager_usable() -> bool:
     if sys.platform != "linux" or shutil.which("systemd-run") is None or shutil.which("systemctl") is None:
         return False
+    restore_user_manager_environment()
     if not cgroup_v2_available() or not systemd_environment_supported():
         return False
     try:
@@ -199,7 +218,7 @@ def create_systemd_environment_file(environment: dict[str, str] | None = None) -
         raise ContractError("containment_environment_invalid", "caller environment is not safely transferable")
     descriptor: int | None = None
     try:
-        descriptor = os.memfd_create("agent-factory-environment", flags=getattr(os, "MFD_CLOEXEC", 0))
+        descriptor = _anonymous_file()
         for name, value in sorted(values.items()):
             remaining = memoryview(_systemd_environment_line(name, value))
             while remaining:
@@ -213,6 +232,27 @@ def create_systemd_environment_file(environment: dict[str, str] | None = None) -
             os.close(descriptor)
         raise ContractError("containment_environment_unavailable", "caller environment could not be transferred") from error
     return descriptor, f"/proc/{os.getpid()}/fd/{descriptor}"
+
+
+def _anonymous_file() -> int:
+    """A private file with no name, readable through /proc/<pid>/fd only while this process lives.
+
+    Some Python builds lack os.memfd_create (observed 2026-10-29: the managed tool environment's
+    Python 3.12.16), which made every systemd launch from the tool server fall back. An unlinked
+    0600 file in the user's own runtime directory has the same properties.
+    """
+    if hasattr(os, "memfd_create"):
+        return os.memfd_create("agent-factory-environment", flags=getattr(os, "MFD_CLOEXEC", 0))
+    import tempfile
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    directory = runtime if runtime and os.path.isdir(runtime) else None
+    descriptor, path = tempfile.mkstemp(prefix="agent-factory-environment-", dir=directory)
+    try:
+        os.unlink(path)
+    except OSError:
+        os.close(descriptor)
+        raise
+    return descriptor
 
 
 def systemd_environment_content(environment: dict[str, str] | None = None) -> bytes:

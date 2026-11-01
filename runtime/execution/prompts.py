@@ -10,7 +10,11 @@ from storage.errors import ContractError
 
 def inline_request(text: str) -> str:
     """Delimit literal Human content without letting embedded tags close it."""
-    tag = "agent-factory-request"
+    return delimited("agent-factory-request", text)
+
+
+def delimited(tag: str, text: str) -> str:
+    """Wrap literal text in tags that the text itself cannot close."""
     if f"<{tag}>" in text or f"</{tag}>" in text:
         tag += "-" + hashlib.sha256(text.encode("utf-8")).hexdigest()
         while f"<{tag}>" in text or f"</{tag}>" in text:

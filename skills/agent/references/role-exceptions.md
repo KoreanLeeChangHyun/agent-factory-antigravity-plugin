@@ -4,14 +4,12 @@
 
 ## 1. Assigned Documents and records
 
-- Explorer assignments are exact project-relative `documentPaths` on the selected task of
+- Document assignments are exact project-relative `documentPaths` on the selected task of
   `--task-list-file`/`--task-id`; existing accepted-contract `requiredFileOperations` add/modify
   entries take precedence. Binding validation retains these paths and announcement comparison
-  rejects replacement. Assign one owner per file; no assignment grants no project writes.
-  Allowed locations are Original source metadata, Refined research/comparison/analysis,
-  evidence artifacts and own handoff records. Code/configuration, other owners' files,
-  `docs/skills/`, shared progress/contract files, deletion/moves and rule publication stay denied.
-  Paths are normalized and checked against symlinks at launch and at write time.
+  rejects replacement. Assign one owner per file. `documentPaths` name Original source
+  metadata, Refined research/comparison/analysis, evidence artifacts or own handoff records.
+  An assignment records ownership; it limits no writes of the run.
 - Explorer owns its assigned research package. Scribe owns assigned Document research,
   source checks, writing, integration, shortening and shared canonical Documents; one owner
   or managed CLI updates common summaries/catalogs. All roles may record their own work, sources, checks, errors and
@@ -21,7 +19,6 @@
   decisions with source, time and affected scope. Preserve existing control authorization
   and state transitions; never promote a proposal or fabricate completion/pass.
 - New runs capture `roleBoundaryPolicy: 1`; `roleDirectExceptions` advertises these capabilities.
-  Historical Explorer runs without the marker retain project read-only capture behavior.
   Model/profile/permission selection remains independent; bindings never widen a read-only
   or otherwise narrower parent execution policy.
 
@@ -35,23 +32,41 @@
   integration remains runtime-owned. Main detects/assigns conflicts; semantic resolution is Work.
 - Use `python3 <plugin-root>/scripts/commit.py --input <main-run>/commit.json` for a check,
   then add `--apply` only under actual authority. No arbitrary Git argv is accepted.
+- A running direct Main without an inherited guard binding also supplies
+  `--main-state <main-run>/state.json`. The tool verifies that state against the registered
+  runtime location, role, mode and running status. An explicit path cannot replace an
+  inherited binding or enable a managed route without its captured run.
 - The manifest contains `repository` (exact project-owned root), `branch`, `head`, `paths`
   (repository-relative exact files), `contentHashes` (SHA-256 per file, null for an already
   authorized removed file), `diffHash` (SHA-256 of `git diff --binary --no-ext-diff --no-textconv HEAD -- <selected paths present in HEAD>`;
   hash empty bytes if none are present; added files remain bound by `contentHashes` before and after staging),
-  `message`, canonical `workStatePath`, and `authority: {decision: "approved", source, time, scope}`.
+  `message`, route evidence below, and `authority: {decision: "approved", source, time, scope}`.
   The recorded authority must identify the Human's actual commit decision and exact set;
   hashes capture that approved set, including any approved pre-existing content in those files.
   Main must not infer authority from tool access or label a proposal approved.
+- For an initial commit, set `head` to JSON `null` and `diffHash` to SHA-256 of empty bytes.
+  Added files remain bound by their exact hashes; creation of HEAD before apply invalidates
+  that manifest. Existing repositories still require the exact current HEAD commit ID.
+- For captured `direct` mode, use `directEvidencePath` pointing to a JSON record inside this
+  Main run. It contains `mainStatePath` (this run's canonical state), matching `agentId` and
+  `runId`, project-relative `changedPaths`, and nonempty `checks` entries with the actual
+  `command` and `outcome: "passed"`. Main remains running while it commits; no child Work
+  or fabricated completion receipt is needed. Do not mix managed evidence into this route.
+- For managed routes, supply canonical `workStatePath`; direct evidence cannot replace a
+  completed Work receipt or its required Verification. Existing managed checks below apply.
+- A tracked submodule path may be selected after its checkout is clean. Its content hash
+  is SHA-256 of the lowercase ASCII HEAD commit ID without a newline. Commit children first,
+  then bind their exact references in the parent manifest. Ordinary directories are rejected.
 - Use `verificationStatePath` for exact pass evidence when the selected route requires it;
   `loopStatePath` may supply an existing recorded Human skip. A scribe result needs no separate
   acceptance; a legacy recorded `changes-requested` or `discarded` review still blocks it. No extra Verification
   is required for work/plan-work; use their Work receipt and own-check evidence.
-- The tool validates the canonical completed receipt, owning Main, paths, branch, HEAD,
+- The tool validates the selected route's own-check evidence or canonical completed receipt, owning Main, paths, branch, HEAD,
   content/diff hashes, absence of conflicts/history operations and an empty or exactly
   approved index (pre-staged content must match the approved working files). It uses
   the same repository integration lock as managed integration/cleanup, stages only exact
-  paths, rechecks the index/content and invokes ordinary `git commit -m` with hooks enabled.
+  paths, rechecks the index/content, runs `git diff --cached --check`, and invokes ordinary
+  `git commit -m` with hooks enabled.
   All index writers must honor this lock/serialization; external editors/Git clients are not
   controlled by this tool. A concurrent or hook failure leaves progress for the assigned
   performer; it never resets the index, bypasses hooks or silently repairs implementation.

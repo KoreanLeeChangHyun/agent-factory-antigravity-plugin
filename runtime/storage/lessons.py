@@ -24,12 +24,14 @@ def operational_path(value):
 def ensure_ignored(root, atomic):
     """Keep generated bodies and scratch files local, even in a separate docs repository.
 
-    Existing tracked records require an explicitly authorized index migration; an ignore
-    file alone cannot untrack them. Never change their index from a recording operation.
+    A recording operation never adds a shared file: when docs/.gitignore already carries
+    the rule (Agent Factory's managed block from `exec.py docs-git apply`, or an older
+    plain line), nothing is written; otherwise a self-ignoring local file is used. Existing
+    tracked records require an explicitly authorized untrack; never change the index here.
     """
     outer = Path(root) / 'docs/.gitignore'
     paths.inspect(outer, missing=True)
-    if outer.is_file() and outer.read_text(encoding='utf-8').splitlines()[-1:] == ['/lessons-learned/']:
+    if outer.is_file() and '/lessons-learned/' in outer.read_text(encoding='utf-8').splitlines():
         return
     path = Path(root) / 'docs/lessons-learned/.gitignore'
     paths.inspect(path, missing=True)

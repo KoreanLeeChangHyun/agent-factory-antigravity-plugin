@@ -57,7 +57,7 @@ class Workflows:
         for selected in (session, verifier):
             area = selected['area']
             from conductor import domains
-            domains.assign_subdomain(self.path.parent, selected['agentId'], area['domainId'], area['subdomainId'], 'ai', 'queue-dispatch:' + request['run']['dispatchId'])
+            domains.assign(self.path.parent, selected['agentId'], area['domainId'], 'ai', 'queue-dispatch:' + request['run']['dispatchId'])
         document_id = 'conductor-' + hashlib.sha256(task['id'].encode()).hexdigest()[:32]
         body = self.path.with_name(request['run']['dispatchId'] + '.workflow-request.md')
         files.atomic_write(body, json.dumps(spec, ensure_ascii=False, sort_keys=True).encode())

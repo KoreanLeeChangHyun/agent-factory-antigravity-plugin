@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Factory ERD v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "diagram_type", "meta", "entities", "relationships"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "diagram_type": {"const": "erd"},
+    "meta": {
+      "type": "object", "additionalProperties": false, "required": ["title"],
+      "properties": {"title": {"$ref": "#/$defs/text"}, "output": {"$ref": "#/$defs/text"}}
+    },
+    "layout": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"columns": {"type": "integer", "minimum": 1}}
+    },
+    "entities": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/entity"}},
+    "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship"}}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "^(?!.*[\\u0000-\\u001f\\u007f-\\u009f]).*\\S.*$"},
+    "entity": {
+      "type": "object", "additionalProperties": false, "required": ["id", "attributes"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"}, "label": {"$ref": "#/$defs/text"},
+        "attributes": {"type": "array", "items": {"$ref": "#/$defs/attribute"}}
+      }
+    },
+    "attribute": {
+      "type": "object", "additionalProperties": false, "required": ["name", "type"],
+      "properties": {
+        "name": {"$ref": "#/$defs/text"}, "type": {"$ref": "#/$defs/text"},
+        "keys": {"type": "array", "uniqueItems": true, "items": {"enum": ["PK", "FK", "UK"]}},
+        "nullable": {"type": "boolean"}
+      }
+    },
+    "relationship": {
+      "type": "object", "additionalProperties": false,
+      "required": ["from", "to", "from_cardinality", "to_cardinality"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"}, "label": {"$ref": "#/$defs/text"},
+        "from": {"$ref": "#/$defs/text"}, "to": {"$ref": "#/$defs/text"},
+        "from_attribute": {"$ref": "#/$defs/text"}, "to_attribute": {"$ref": "#/$defs/text"},
+        "from_cardinality": {"enum": ["1", "0..1", "1..*", "0..*"]},
+        "to_cardinality": {"enum": ["1", "0..1", "1..*", "0..*"]},
+        "identifying": {"type": "boolean"}
+      }
+    }
+  }
+}

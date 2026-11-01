@@ -121,8 +121,14 @@ def validate_terminal_result(terminal: Any, state: dict[str, Any]) -> bytes | No
     if (not isinstance(terminal, dict) or not expected <= set(terminal) or not set(terminal) <= allowed
             or not isinstance(terminal.get("status"), str)
             or terminal.get("status") not in {"completed", "needs-human-decision", "failed"}
-            or terminal.get("resultPath") != state["resultPath"]):
-        raise ContractError("result_invalid", "Codex returned an invalid terminal result")
+            or not isinstance(terminal.get("resultPath"), str)
+            or (not inline and terminal["resultPath"] != state["resultPath"])):
+        raise ContractError("result_invalid", "The Agent returned an invalid terminal result")
+    if terminal["resultPath"] != state["resultPath"]:
+        # An inline answer only echoes the bound path; the runtime writes it to state["resultPath"] either way.
+        # Models misquote it (working-directory, placeholder or edited-file paths), which must not discard the answer.
+        # A file-protocol result keeps the exact check above because the Agent wrote that file itself.
+        terminal["resultPath"] = state["resultPath"]
     decision = terminal.get("decisionKind")
     if terminal.get("decisionScope") not in (None, "task-execution", "scope-expansion", "external-prerequisite"):
         raise ContractError("result_invalid", "Decision scope must identify the task, expanded scope or external prerequisite")
@@ -246,10 +252,10 @@ do not open a Skill or reference file merely to obtain these instructions.
 When Main's current policy is `bypass`, classify conversation versus work first.
 Questions, consultation, discussion, planning and unclear messages authorize no edits,
 changes or delegation. Bypass never turns them into work.
-Explicit work requests satisfy the Delegation gate. Follow the captured route with
-bounded reasonable assumptions. No routine proposal, plan, scope, tool or delegation
+Explicit work requests satisfy the Delegation gate. Follow the captured route within
+what the Human stated. No routine proposal, plan, scope, tool or delegation
 approval is needed; do not return `needs-human-decision` merely for such approval.
-Ask only for blocking credentials
+Ask only for blocking credentials, unclear Human intent
 or Human-owned choices with materially different outcomes. Scope and authority stay unchanged.
 """
     else:
@@ -379,6 +385,9 @@ When approval is required, follow the role's authorization gate.
 
 {result_instruction} Run ID: `{run_id}`.
 {human_approval_obligation}{route_instruction(task_mode, role)}{binding_obligation}{receipt_obligation}{migration_obligation}{completion_checks(role, task_mode, bool(receipt_obligation), structured_receipt)}"""
+    if role == "main":
+        from execution.intents import prompt_context
+        dynamic += prompt_context(agent_id, request_path)
     development_root = os.environ.get("AGENT_FACTORY_DEV_PLUGIN_ROOT", "").strip()
     if development_root:
         root = Path(development_root).resolve()
@@ -418,10 +427,10 @@ def stderr_reports_sandbox_unavailable(path: Path) -> bool:
     return sandbox_diagnostics.sandbox_failure(stderr) is not None
 
 
-def process_exit_failure(return_code: int, stderr_path: Path, started: bool) -> AttemptFailure:
+def process_exit_failure(return_code: int, stderr_path: Path, started: bool, backend: str = "codex") -> AttemptFailure:
     if stderr_reports_sandbox_unavailable(stderr_path):
         return AttemptFailure("sandbox_unavailable", sandbox_diagnostics.sandbox_failure("fs sandbox helper failed"), started, True)
-    return AttemptFailure("codex_failed", f"codex exec exited with {return_code}", started, True)
+    return AttemptFailure("codex_failed", f"{backend} exited with {return_code}", started, True)
 
 
 def missing_result_failure(stderr_path: Path, publication_failed: bool = False) -> AttemptFailure:

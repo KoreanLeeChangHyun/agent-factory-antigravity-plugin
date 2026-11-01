@@ -17,7 +17,6 @@ from storage.errors import ContractError
 from storage.files import atomic_write_json, file_lock, reject_symlink, safe_read_json
 from tasks import operation_records
 
-VERDICTS = ("normal", "delayed", "stuck", "decision-needed")
 # Reported immediately, regardless of the report interval.
 ALERT_VERDICTS = {"stuck", "decision-needed"}
 DEFAULTS = {"intervalMinutes": 10, "delayMinutes": 20, "stuckMinutes": 60, "repeatLimit": 3}

@@ -16,6 +16,16 @@ MAX_TOOL_OUTPUT_CHARACTERS = 64 * 1024
 MAX_THINKING_CHARACTERS = 16 * 1024
 # A failed Bash result starts with Claude Code's own exit status line.
 BASH_EXIT = re.compile(r"\AExit code (\d+)\b")
+# Claude Code reports these failures only as assistant text before an empty error result.
+AUTHENTICATION_FAILURE = re.compile(r"failed to authenticate|oauth session expired|please run /login|invalid api key", re.I)
+
+
+class ProviderFailure(ValueError):
+    """A Claude-side failure (sign-in, usage limit, API error), not an invalid Agent answer."""
+
+    def __init__(self, message, code):
+        super().__init__(message)
+        self.code = code
 
 
 class Events:
@@ -43,6 +53,7 @@ class Events:
         # Thinking blocks seen while streaming; complete messages then do not repeat them.
         self.thinking = {}
         self.streamed_messages = set()
+        self.last_text = ""
 
     def translate(self, event):
         if not isinstance(event, dict):
@@ -113,6 +124,7 @@ class Events:
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "text" and kind == "assistant" and not parent:
+                    self.last_text = str(block.get("text", ""))
                     result.append({"type": "native.commentary", "text": block.get("text", "")})
                 elif block.get("type") == "thinking" and kind == "assistant" and not parent:
                     message_id = event.get("message", {}).get("id")
@@ -155,6 +167,8 @@ class Events:
                                 item["exit_code"] = int(exit_code.group(1))
                         if item["type"] == "command_execution":
                             item["aggregated_output"] = json.dumps(block.get("content"), ensure_ascii=False)
+                        elif item["type"] == "mcp_tool_call" and (images := image_result(block.get("content"))) is not None:
+                            item["result"] = {"content": images, "isError": bool(block.get("is_error"))}
                         elif output:
                             item["result"] = output[:MAX_TOOL_OUTPUT_CHARACTERS]
                         # A failed tool call is ordinary agent work (e.g. a nonzero Bash exit), not a runtime failure.
@@ -164,9 +178,11 @@ class Events:
             if not self.started or event.get("session_id") != self.session:
                 raise ValueError("Claude terminal session does not match initialization")
             if event.get("is_error") is not False or event.get("subtype") != "success":
-                # The result text carries the reason when there is one, such as a usage limit.
-                reason = event.get("errors") or event.get("result") or event.get("subtype")
-                raise ValueError("Claude execution failed: " + str(reason)[:2000])
+                # The result text carries the reason when there is one, such as a usage limit. A sign-in
+                # failure or session limit arrives as assistant text with an empty `success` error result.
+                reason = str(event.get("errors") or event.get("result") or self.last_text.strip() or event.get("subtype"))[:2000]
+                code = "authentication_required" if AUTHENTICATION_FAILURE.search(reason) else "native_backend_error"
+                raise ProviderFailure("Claude execution failed: " + reason, code)
             terminal = event.get("structured_output")
             if not isinstance(terminal, dict):
                 raise ValueError("Claude returned no schema-validated structured_output")
@@ -246,6 +262,30 @@ def reasoning_item(identity, text):
     if isinstance(text, str) and text.strip():
         item["summary"] = [text.strip()[:MAX_THINKING_CHARACTERS]]
     return {"type": "item.completed", "item": item}
+
+
+def image_result(content):
+    """Keep MCP image bytes outside the text preview limit, normalizing Claude's source blocks.
+
+    Invalid/unsupported image sources remain image blocks without data so delivery can fail
+    visibly; an image URL is not evidence that image bytes reached the runtime.
+    """
+    if not isinstance(content, list) or not any(isinstance(part, dict) and part.get("type") == "image" for part in content):
+        return None
+    result = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "text" and isinstance(part.get("text"), str):
+            result.append({"type": "text", "text": part["text"][:MAX_TOOL_OUTPUT_CHARACTERS]})
+        elif part.get("type") == "image":
+            source = part.get("source")
+            if isinstance(source, dict):
+                result.append({"type": "image", "data": source.get("data") if source.get("type") == "base64" else None,
+                               "mimeType": source.get("media_type")})
+            else:
+                result.append({"type": "image", "data": part.get("data"), "mimeType": part.get("mimeType")})
+    return result
 
 
 def tool_output(content):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check or perform a Main-owned receipt-bound ordinary local commit."""
+"""Check or perform a Main-owned evidence-bound ordinary local commit."""
 import argparse
 import json
 import os
@@ -16,11 +16,12 @@ from storage.files import safe_read_json  # noqa: E402
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, help="Exact approved commit manifest inside this Main run")
+    parser.add_argument("--main-state", help="Canonical running direct Main state when no guard binding is inherited")
     parser.add_argument("--apply", action="store_true", help="Perform the approved ordinary local commit; default checks only")
     args = parser.parse_args()
     try:
         config = json.loads(os.environ.get(ENV, "{}"))
-        root, state = bound_main(config)
+        root, state = bound_main(config, args.main_state)
         if has_symlink(args.input) or not inside(args.input, Path(state["statePath"]).parent, None):
             raise ContractError("commit_scope_invalid", "Manifest must belong to this Main run")
         print(json.dumps(execute(root, state, safe_read_json(Path(args.input)), apply=args.apply)))

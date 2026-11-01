@@ -20,8 +20,14 @@ Read the selected command's linked options before running it.
 ## `map-path`
 - [Options](exec-map-path.md)
 
+## `docs-git`: Report or prepare Git handling of the managed docs/ tree
+- [Options](exec-docs-git.md)
+
 ## `doctor`: Inspect host sandbox prerequisites; use doctor --help for options
 - [Options](exec-doctor.md)
+
+## `intent`: Persist request understanding, linked questions and completion evidence
+- [Options](exec-intent.md)
 
 ## `announce-tasks`: Prepare one Main-owned task list for presentation and dispatch
 - [Options](exec-announce-tasks.md)

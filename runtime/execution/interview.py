@@ -46,9 +46,19 @@ def normalize_question(value: object) -> dict | None:
     yes_no = value.get("yesNo", False)
     if type(yes_no) is not bool:
         return None
+    intent = value.get("intent")
+    if intent is not None:
+        if (not isinstance(intent, dict) or set(intent) != {"agentId", "requestId", "questionId", "revision"}
+                or intent.get("questionId") != identity
+                or any(not isinstance(intent.get(key), str)
+                       or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", intent[key])
+                       for key in ("agentId", "requestId", "questionId"))
+                or type(intent.get("revision")) is not int or intent["revision"] < 1):
+            return None
     return {"type": "interview.question", "question": {
         "id": identity, "current": current, "total": total, "text": text.strip(),
         "options": normalized, "recommendedValue": recommended, "yesNo": yes_no,
+        **({"intent": intent} if intent is not None else {}),
     }}
 
 

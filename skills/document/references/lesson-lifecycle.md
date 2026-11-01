@@ -24,11 +24,9 @@
   independent body notes in matching, filters exact scope and reports application metrics.
 - Use `--input-json '{"query":"topic","scope":"task-scope"}'` for a read-only `retrieve`
   without creating an input file; `audit` accepts `--input-json '{"occurrenceIds":[]}'`.
-  Both query actions avoid write locks. Restricted runs use literal absolute paths and one
-  command per call, never `$PWD`, heredocs, redirection or multiline shell lists. Scribe may
-  use the Document CLI. New Explorer runs may record their own occurrence and resolve only
-  a record whose every occurrence belongs to that same run. Use the captured roots and
-  source equal to the run directory. Rule adoption/publication stays forbidden.
+  Both query actions avoid write locks. Guarded Main runs use literal absolute paths and one
+  command per call, never `$PWD`, heredocs, redirection or multiline shell lists.
+  Rule adoption/publication stays forbidden.
 - Add `--compact` for model-facing output. It removes only JSON separator whitespace;
   all records, rules, sources, outcomes and error diagnostics retain their values and structure.
   The default output format and action authority are unchanged.

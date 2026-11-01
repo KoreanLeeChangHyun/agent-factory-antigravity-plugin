@@ -19,7 +19,7 @@ from pathlib import Path
 FILE = "model-affinity.json"
 TASK_TYPES = ("research", "small-change", "design-diagnosis", "documentation")
 STATUSES = ("applied", "human-specified", "recommended", "no-affinity-table", "recheck-required", "no-match")
-PROFILES = ("explore", "workLight", "work", "scribe")
+PROFILES = ("explore", "workLight", "work", "scribe", "designer")
 
 
 def provider_of(model):

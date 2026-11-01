@@ -31,8 +31,7 @@ def build_parser():
                        ("processing-policy", "Set the processing policy inherited only by newly accepted requests"),
                        ("hire-role", "Hire or reuse an attributed role with captured settings; native session starts on assignment"),
                        ("enroll-worker", "Adopt an explicitly attributed idle Work session with matching settings"),
-                       ("pool-config", "Configure captured domain/subdomain employment limits and idle reuse"),
-                       ("subdomain", "Add an explicit child area under an existing domain"),
+                       ("pool-config", "Configure captured domain employment limits and idle reuse"),
                        ("init", "Create a chat with its captured policy (idempotent; a different policy conflicts)"),
                        ("ingest", "Accept one conversation/control/lifecycle/progress input"),
                        ("snapshot", "UI projection snapshot with its replay cursor"),
@@ -49,8 +48,8 @@ def build_parser():
             p.add_argument("--chat-id", required=name != "demo", default="dev-chat" if name == "demo" else None)
         if name in {"metrics", "serve"}:
             p.add_argument("--chat-id")
-        if name in {"pool-config", "subdomain", "enroll-worker", "configure-role", "processing-policy", "hire-role", "register-required"}:
-            p.add_argument("--input-json", required=True, help="Structured captured configuration or child-area declaration")
+        if name in {"pool-config", "enroll-worker", "configure-role", "processing-policy", "hire-role", "register-required"}:
+            p.add_argument("--input-json", required=True, help="Structured captured configuration")
         if name == "memory-search":
             p.add_argument("--reader-json", required=True, help='Reader scope, e.g. {"kind":"performer","performerId":"...","domainId":"..."}')
             p.add_argument("--query", required=True)
@@ -167,11 +166,6 @@ def main(argv=None):
         elif args.command == 'pool-config':
             value = json.loads(args.input_json)
             result = store.pool.configure(value['configuration'], value['reference'])
-        elif args.command == 'subdomain':
-            from conductor import domains
-            value = json.loads(args.input_json)
-            result = domains.subdomain(store.path.parent, value['domainId'], value['name'], value['actor'], value['source'],
-                                       value.get('expectedRevision'), value.get('writeScope'))
         elif args.command == "init":
             result = store.ensure_chat(args.chat_id, json.loads(args.policy_json) if args.policy_json else DEFAULT_POLICY)
         elif args.command == "ingest":

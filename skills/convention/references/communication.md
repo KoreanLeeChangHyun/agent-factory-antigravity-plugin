@@ -48,6 +48,7 @@
 | `workLight` | Worker | 작업자 |
 | `explore` | Explorer | 탐색자 |
 | `scribe` | Scribe | 기록자 |
+| `designer` | Designer | 도안자 |
 | `verification` | Verifier | 검증자 |
 
 <a id="content-fidelity"></a>

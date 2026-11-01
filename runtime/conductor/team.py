@@ -235,7 +235,24 @@ def _run_state(status):
             "cancelling": "current", "needs-human-decision": "waiting-human"}.get(status, status or "unknown")
 
 
-def tasks_for(observation, agent):
+def loop_positions(observation):
+    """Each worker's loop task positions with its roles, in loop then position order: one pass for all workers."""
+    positions = {}
+    for loop in observation["loops"]:
+        state = loop["state"]
+        workflow, items, index = _loop_tasks(state)
+        verification = _requests_verification(state)
+        for position, item in enumerate(items):
+            roles = {}
+            for role in WORKER_ROLES:
+                if role == "work" or verification:
+                    roles.setdefault(item.get(role + "AgentId", state.get(role + "AgentId")), []).append(role)
+            for agent, agent_roles in roles.items():
+                positions.setdefault(agent, []).append((loop, workflow, index, verification, position, item, agent_roles))
+    return positions
+
+
+def tasks_for(observation, agent, positions=None):
     """Every task this worker ran or is assigned, newest first, each with all of its runs in order."""
     entry = observation["workers"].get(agent) or {"runs": []}
     tasks = {}
@@ -246,30 +263,25 @@ def tasks_for(observation, agent):
                                       "loops": [], "runs": [], "_continuations": {}, "_dispatches": {},
                                       "userRevisionCount": None})
 
-    for loop in observation["loops"]:
+    if positions is None:
+        positions = loop_positions(observation)
+    for loop, workflow, index, verification, position, item, roles in positions.get(agent, ()):
         state = loop["state"]
-        workflow, items, index = _loop_tasks(state)
-        verification = _requests_verification(state)
-        for position, item in enumerate(items):
-            roles = [role for role in WORKER_ROLES if item.get(role + "AgentId", state.get(role + "AgentId")) == agent
-                     and (role == "work" or verification)]
-            if not roles:
-                continue
-            record = task((_parent_agent(state), workflow.get("id"), item.get("id")))
-            record.update(title=item.get("title"), completionCriteria=item.get("completionCriteria"),
-                          domain=(item.get("allocation") or {}).get("domain"), userRevisionCount=item.get("userRevisionCount"))
-            record["loops"].append({"loopId": state.get("loopId"), "ownerAgentId": loop["ownerAgentId"],
-                                    "statePath": str(loop["path"]), "loopStatus": state.get("status"),
-                                    "phase": state.get("phase"), "roles": roles, "position": position,
-                                    "current": position == index and state.get("status") not in ENDED_LOOPS,
-                                    "workStatus": item.get("workStatus"), "verificationStatus": item.get("verificationStatus"),
-                                    "requestRevision": item.get("requestRevision"), "requestPath": item.get("requestPath"),
-                                    "requestHash": item.get("requestHash"),
-                                    "assignment": copy.deepcopy(state.get("teamAssignment")) if position == 0 else None,
-                                    "taskState": _task_state(state, position, index, item, verification)})
-            record["_continuations"].update(_continuations(state))
-            record["_dispatches"].update({item["runId"]: item for item in state.get("dispatchHistory", [])
-                                          if item.get("taskId") == record["taskId"]})
+        record = task((_parent_agent(state), workflow.get("id"), item.get("id")))
+        record.update(title=item.get("title"), completionCriteria=item.get("completionCriteria"),
+                      domain=(item.get("allocation") or {}).get("domain"), userRevisionCount=item.get("userRevisionCount"))
+        record["loops"].append({"loopId": state.get("loopId"), "ownerAgentId": loop["ownerAgentId"],
+                                "statePath": str(loop["path"]), "loopStatus": state.get("status"),
+                                "phase": state.get("phase"), "roles": list(roles), "position": position,
+                                "current": position == index and state.get("status") not in ENDED_LOOPS,
+                                "workStatus": item.get("workStatus"), "verificationStatus": item.get("verificationStatus"),
+                                "requestRevision": item.get("requestRevision"), "requestPath": item.get("requestPath"),
+                                "requestHash": item.get("requestHash"),
+                                "assignment": copy.deepcopy(state.get("teamAssignment")) if position == 0 else None,
+                                "taskState": _task_state(state, position, index, item, verification)})
+        record["_continuations"].update(_continuations(state))
+        record["_dispatches"].update({item["runId"]: item for item in state.get("dispatchHistory", [])
+                                      if item.get("taskId") == record["taskId"]})
     for run in entry["runs"]:
         binding = _binding(run)
         key = (run.get("parentAgentId"), binding.get("workflowId"), binding.get("taskId")) if binding else (None, None, None)
@@ -319,18 +331,18 @@ def _read_domains(runtime, root):
         return None, {"code": getattr(error, "code", "domain_store_unreadable"), "message": str(error)}
 
 
-def worker_view(observation, held, domains, agent, task_list=None):
+def worker_view(observation, held, domains, agent, task_list=None, positions=None):
     # A worker named for a queued task may have no session or records yet.
     entry = observation["workers"].get(agent) or {"agentId": agent, "session": None, "runs": [], "problems": []}
     domain, removed = _domain(domains, agent)
     worker_holds = held.get(agent, [])
-    task_list = tasks_for(observation, agent) if task_list is None else task_list
+    task_list = tasks_for(observation, agent, positions) if task_list is None else task_list
     counts = {}
     for item in task_list:
         counts[item["state"]] = counts.get(item["state"], 0) + 1
     latest = max(entry["runs"], key=lambda run: (run.get("acceptedAt") or "", run.get("runId") or ""), default=None)
     return {"agentId": agent, **_profile(entry), "domain": domain, "removed": removed,
-            "availability": "queued" if latest and latest.get("status") in {"accepted", "queued"} and latest.get("domainAdmission", {}).get("status") == "waiting" else availability(worker_holds), "holds": copy.deepcopy(worker_holds),
+            "availability": availability(worker_holds), "holds": copy.deepcopy(worker_holds),
             "attention": [hold for hold in worker_holds if hold["kind"] == "failed"],
             "currentTasks": [_task_summary(item) for item in task_list if item["state"] in {"current", "waiting-human"}],
             "queuedTasks": [_task_summary(item) for item in task_list if item["state"] == "queued"],
@@ -358,7 +370,8 @@ def roster(runtime, root):
     held = holds(observation)
     domains, domain_error = _read_domains(runtime, root)
     agents = {agent for agent, entry in observation["workers"].items() if _is_worker(entry)} | set(held)
-    workers = [worker_view(observation, held, domains, agent) for agent in sorted(agents)]
+    positions = loop_positions(observation)
+    workers = [worker_view(observation, held, domains, agent, positions=positions) for agent in sorted(agents)]
     groups = []
     for domain in (domains or {}).get("domains", []):
         members = [worker["agentId"] for worker in workers if (worker["domain"] or {}).get("domainId") == domain["id"]]
@@ -474,11 +487,6 @@ def check_start(runtime, root, workflow_id, tasks, requirements, verification_ag
     observation = observe(runtime, root)
     held = holds(observation)
     workers, earlier = [], set()
-    from conductor import session_pool, domains as domain_store
-    document, domain_error = _read_domains(runtime, root)
-    if domain_error:
-        raise ContractError(domain_error["code"], domain_error["message"])
-    pool_entries = session_pool.observe(Path(runtime.runtime_paths.resolve(root)["runtimeRoot"]), document)
     named = []
     for task in tasks:
         for role in WORKER_ROLES:
@@ -501,15 +509,6 @@ def check_start(runtime, root, workflow_id, tasks, requirements, verification_ag
         strategy = (allocation.get("session") or {}).get("strategy")
         entry = observation["workers"].get(agent) or {"session": None, "runs": [], "problems": []}
         exists = entry["session"] is not None
-        domain = domain_store.find(document, allocation["domain"]) if allocation.get("domain") else next(
-            (d for d in document["domains"] if d["id"] == document["assignments"].get(agent, {}).get("domainId")), None)
-        if not exists and domain:
-            members = session_pool.operating(document, domain, pool_entries)
-            reusable = [candidate for candidate in members if availability(held.get(candidate, [])) == "idle"
-                        and not compare(_profile(observation["workers"][candidate]), {**requirements, "role": "work"})]
-            if len(members) >= session_pool.limit(domain) and reusable:
-                raise ContractError("worker_reuse_required", "This domain's operating pool is full. Reuse an idle compatible performer: "
-                                    + ", ".join(reusable) + ". Reset its conversation first only for unrelated work; history is retained.")
         if agent in earlier:
             continue  # Later tasks of this list continue the session an earlier task opened.
         earlier.add(agent)

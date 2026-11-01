@@ -5,25 +5,29 @@ Rules for when and why to run it stay in the owning Skill listed in [SKILL.md](.
 
 ## `send`
 Required: `--agent AGENT`
+One of: `--document-context-file` | `--document-context-json`
 One of: `--request-file` | `--message` | `--input-file`
 - `--project-root PROJECT_ROOT`
 - `--runtime-home RUNTIME_HOME`
 - `--project-id PROJECT_ID`
+- `--intent-answer INTENT_ANSWER`: Explicit question binding JSON (agentId, requestId, questionId, revision); carries no approval
 - `--task-workspace-file TASK_WORKSPACE_FILE`: Runtime-owned task Work Unit binding captured by loop.py
 - `--task-list-file TASK_LIST_FILE`
 - `--task-id TASK_ID`
 - `--document-context-file DOCUMENT_CONTEXT_FILE`: Explicit per-request document query, scope, required sources and selections JSON; does not grant authority
+- `--document-context-json DOCUMENT_CONTEXT_JSON`: Inline versioned document, lesson and run evidence selections; does not grant authority
 - `--request-file REQUEST_FILE`
 - `--message MESSAGE`
 - `--input-file INPUT_FILE`: versioned agent-input JSON with sibling, file-backed images
 - `--actor {main,human}`
 - `--human-approval-policy {required,bypass}`: Main delegation approval policy; omitted sends preserve the session policy
 - `--task-mode {orchestrate,direct,work,plan,verification,plan-work,work-verification,plan-work-verification}`: Captured execution route; new Main requests default to orchestrate
-- `--work-profile {work,workLight,explore,scribe}`: Work profile Main chose (work = Expert, workLight = Worker, explore = Explorer, scribe = Scribe); selects no model; explore writes exact task-bound evidence Documents and scribe writes only inside docs/
+- `--work-profile {work,workLight,explore,scribe,designer}`: Work profile Main chose (work = Expert, workLight = Worker, explore = Explorer, scribe = Scribe, designer = Designer); selects no model or permission
 - `--model MODEL`
 - `--provider {codex,claude,antigravity}`
 - `--reasoning-effort {none,minimal,low,medium,high,xhigh,max,ultra}`
 - `--agent-permissions AGENT_PERMISSIONS`: Captured Human-selected role permission overrides as JSON
+- `--agent-models AGENT_MODELS`: Captured Human-selected role model settings as JSON; a role may list candidates for Main to choose from
 - `--work-isolation {on,off}`: Captured Human-selected Work isolation toggle; on requires AI-chosen task Work Units for delegated Work
 - `--fast | --no-fast`
 - `--goal-mode | --no-goal-mode`

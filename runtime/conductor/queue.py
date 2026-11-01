@@ -259,7 +259,7 @@ class Store:
             require(payload.get("relation") in (None, "new", "followup"), "relation_invalid", "relation is new or followup")
             kind = "message"
         elif cls == "control":
-            require(payload.get("action") in {"cancel", "approve", "resolve-input", "reassign", "answer-worker", "integrate-workspace", "cleanup-workspace", "resolve-area", "confirm-decision", "answer-question", "hire-role", "configure-area", "configure-role", "accept-area-task", "register-required", "exclude-required", "create-child", "revise"} | PERFORMER_ACTIONS, "control_action",
+            require(payload.get("action") in {"cancel", "approve", "resolve-input", "reassign", "answer-worker", "integrate-workspace", "cleanup-workspace", "resolve-area", "confirm-decision", "answer-question", "hire-role", "configure-area", "configure-role", "accept-area-task", "register-required", "exclude-required", "revise"} | PERFORMER_ACTIONS, "control_action",
                     "Unknown control action")
             require(payload.get("commandId"), "command_id", "commandId required")
             key, kind = "chat:%s:control:%s" % (chat_id, payload["commandId"]), payload["action"]
@@ -398,7 +398,7 @@ class Store:
                 handler = {"conversation": self.route_conversation, "control": self.route_control,
                            "lifecycle": self.route_lifecycle}[inp["class"]]
                 outcome = handler(c, inp, payload) or {}
-                if inp['class'] == 'control' and payload.get('action') in ('hire-role','configure-area','configure-role','accept-area-task','create-child', *PERFORMER_ACTIONS):
+                if inp['class'] == 'control' and payload.get('action') in ('hire-role','configure-area','configure-role','accept-area-task', *PERFORMER_ACTIONS):
                     self.event(c, inp['chat_id'], 'role-pool-control-result', {'commandId': payload['commandId'], 'outcome': outcome}, key='role-control:' + payload['commandId'])
                 c.execute("UPDATE inputs SET status=?, routed_at=?, reason=?, request_id=COALESCE(?, request_id),"
                           " conductor_id=COALESCE(?, conductor_id) WHERE id=?",
@@ -448,9 +448,9 @@ class Store:
                     try:
                         area = self.pool.area(p.get('area'))
                     except ContractError:
-                        qid = self.question(c, None, None, 'area', 'Select domain and subdomain before hiring', 'input:' + inp['id'], input_id=inp['id'])
+                        qid = self.question(c, None, None, 'area', 'Select a domain before hiring', 'input:' + inp['id'], input_id=inp['id'])
                         self.event(c, chat, 'area-question', {'inputId': inp['id'], 'clientMessageId': p.get('clientMessageId'),
-                                   'questionId': qid, 'question': 'Select domain and subdomain before hiring', 'catalog': self.pool.catalog()}, key='area:' + inp['id'])
+                                   'questionId': qid, 'question': 'Select a domain before hiring', 'catalog': self.pool.catalog()}, key='area:' + inp['id'])
                         return {'status': 'held', 'reason': 'area-required'}
                 req = self.create_request(c, chat, p["text"], {**inp, "areaSource": p.get("areaSource"), "processingChoice": p.get("processingChoice")}, area=area)
             else:
@@ -509,13 +509,13 @@ class Store:
         """Allocate or reuse a physical instance; every instance belongs to the same logical conductor."""
         if conductor_pool.enabled(self.policy(c, chat)):
             if not area:
-                raise ContractError('area_required', 'Conductor instance needs a declared domain and child area')
+                raise ContractError('area_required', 'Conductor instance needs a declared domain')
             self.refresh_instances(c)
             signature = conductor_pool.signature(self.policy(c, chat), "conductor")
             if parent:
                 con = self.row(c, 'SELECT * FROM conductors WHERE id=?', parent['conductor_id'])
                 owned = self.pool.get_area(c, 'conductor', con['id']) if con else None
-                if owned and owned['subdomainId'] == area['subdomainId']:
+                if owned and owned['domainId'] == area['domainId']:
                     return con  # Child planning shares the parent's physical instance at the next safe turn boundary.
             if self.pool.room(c, 'conductor', area):
                 return None
@@ -695,11 +695,6 @@ class Store:
             self.event(c, chat, "input-resolved", {"inputId": held["id"], "relation": p["relation"],
                                                    "requestId": p.get("requestId")}, key="resolved:" + held["id"])
             return {"status": "processed", "reason": "resolved"}
-        if action == 'create-child':
-            from conductor import domains
-            result = domains.subdomain(self.path.parent, p.get('areaId'), p.get('name'), 'human', 'human-control:' + p['commandId'], p.get('expectedRevision'))
-            self.event(c, chat, 'role-pools-state', self.roles.projection(c))
-            return result
         if action == 'accept-area-task':
             require(isinstance(p.get('text'), str) and p['text'].strip(), 'message_empty', 'Request text required')
             area = self.pool.area(p.get('area'))
@@ -928,7 +923,7 @@ class Store:
                 c.execute("UPDATE conductors SET status='idle' WHERE id=?", (new["id"],))
                 new = self.pick_conductor(c, req["chat_id"], area=self.pool.get_area(c, "request", req["id"]))
         if conductor_pool.enabled(self.policy(c, req['chat_id'])):
-            require(all((self.pool.get_area(c, 'conductor', new['id']) or {}).get(key) == (self.pool.get_area(c, 'request', req['id']) or {}).get(key) for key in ('domainId', 'subdomainId')), 'area_mismatch', 'Instance responsibility must match the request area')
+            require((self.pool.get_area(c, 'conductor', new['id']) or {}).get('domainId') == (self.pool.get_area(c, 'request', req['id']) or {}).get('domainId'), 'area_mismatch', 'Instance responsibility must match the request area')
         old = req["conductor_id"]
         moved = [dict(r) for r in c.execute("SELECT * FROM mailbox WHERE request_id=? AND status IN ('queued','delivered')",
                                             (req["id"],))]
@@ -1350,8 +1345,7 @@ class Store:
                     area = item['spec']['area']
                     rule = self.pool.rule(c, 'worker', area)
                     same_domain = sum(other['spec']['area']['domainId'] == area['domainId'] for other in plan)
-                    same_child = sum(other['spec']['area']['subdomainId'] == area['subdomainId'] for other in plan)
-                    if (rule['domainLimit'] == 1 and same_domain > 1) or (rule['subdomainLimit'] == 1 and same_child > 1):
+                    if rule['domainLimit'] == 1 and same_domain > 1:
                         item['parallelCandidate'] = False
                         item['admissionReason'] = 'employment-policy'
 
@@ -1422,11 +1416,7 @@ class Store:
             if conductor_pool.enabled(policy):
                 area = self.pool.area(spec.get('area') or self.pool.get_area(c, 'request', req['id']))
                 spec['area'] = area
-            if 'writeScope' not in spec:
-                declared = self.pool.area(spec.get('scopeBySubdomain')) if spec.get('scopeBySubdomain') else None
-                require(declared and declared.get('writeScope') is not None, 'scope_required', 'Declare write paths or a child area with a recorded path scope')
-                require(area is None or declared['subdomainId'] == area['subdomainId'], 'area_mismatch', 'Declared child scope must match performer responsibility')
-                spec['writeScope'] = declared['writeScope']
+            require('writeScope' in spec, 'scope_required', 'Declare write paths')
             spec = self.roles.freeze(c, req, spec, area, policy)
             intents.scope_paths(spec['writeScope'])
             self.close_questions(c, req['id'], 'resolved-by-declaration', kind='declaration')

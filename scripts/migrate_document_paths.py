@@ -16,7 +16,6 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime"))
 from storage import document_migration  # noqa: E402
-from hooks import orchestrator_guard  # noqa: E402
 
 
 MANIFEST_NAME = "migration-manifest.json"
@@ -358,10 +357,6 @@ def main() -> int:
     parser.add_argument("--backup-dir", type=Path)
     args = parser.parse_args()
     try:
-        config = json.loads(os.environ.get(orchestrator_guard.ENV, "{}"))
-        restricted = config.get("profile") in orchestrator_guard.PROFILES
-        if restricted and not orchestrator_guard.migration_command(sys.argv[1:], config):
-            raise ValueError("Restricted Document migration requires captured roots, contract moves and an own-run document-backups destination")
         root = args.project_root.resolve(strict=True)
         if args.storage_layout:
             docs = (args.documents_root or root).resolve(strict=True)
@@ -393,11 +388,6 @@ def main() -> int:
         if backup is not None and (backup == root or root in backup.parents):
             raise ValueError("--backup-dir must be outside the project root")
         plan = build_plan(root, operations, args.task_id, backup)
-        if restricted:
-            docs = orchestrator_guard.scribe_root({"projectRoot": config["projectRoot"], "workingDirectory": config["documentsRoot"]})
-            if any(not orchestrator_guard.inside(entry[key], docs, None)
-                   for entry in plan for key in ("source", "destination")):
-                raise ValueError("Scribe move endpoints must stay inside the captured docs/ root")
         if {entry["source"] for entry in plan} & {entry["destination"] for entry in plan}:
             raise ValueError("Move sources and destinations must not overlap")
         payload = manifest_payload(root, operations, args.task_id, plan)

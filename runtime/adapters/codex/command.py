@@ -25,6 +25,7 @@ def build_codex_command(
         common.extend(["-c", "model_reasoning_effort=" + json.dumps(session["reasoningEffort"])])
     # Bounded roles must never inherit native goal auto-continuation from config.
     common.extend(["-c", "features.goals=false"])
+    common.extend(execution_policy.tool_server_config())
     model = session.get("model")
     if model:
         common.extend(["--model", str(model)])

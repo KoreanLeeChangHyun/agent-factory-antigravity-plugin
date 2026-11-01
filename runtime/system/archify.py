@@ -16,13 +16,18 @@ import urllib.error
 import urllib.request
 
 from storage.artifacts import artifact_output
+from system import erd
 
 LOCK = json.loads(Path(__file__).with_name("archify-lock.json").read_text(encoding="utf-8"))
-TYPES = ("architecture", "sequence")
+TYPES = ("architecture", "sequence", "erd")
 
 
 class ArchifyError(Exception):
-    """An actionable renderer or browser failure."""
+    """An actionable renderer or browser failure, with the official structured diagnostics when known."""
+
+    def __init__(self, message: str, diagnostics: list[dict] | None = None):
+        super().__init__(message)
+        self.diagnostics = diagnostics or []
 
 
 def unlinked_path(value: Path) -> Path:
@@ -48,7 +53,9 @@ def tree_digest(root: Path) -> str:
     return hashlib.sha256("".join(entries).encode()).hexdigest()
 
 
-def renderer(root: Path) -> tuple[str, Path]:
+def renderer(root: Path | None) -> tuple[str, Path]:
+    if root is None:
+        raise ArchifyError("Architecture/sequence require --tool-dir. Run archify.py install first.")
     root = unlinked_path(root)
     if not root.is_dir():
         raise ArchifyError("Renderer is missing. Run archify.py install --tool-dir <directory> first.")
@@ -133,12 +140,18 @@ def artifact_path(value: Path, root: Path) -> Path:
 def document_input(value: Path, root: Path) -> tuple[Path, bytes, str]:
     path = project_path(value, root)
     docs = root / "docs"
-    if (not path.is_relative_to(docs) or path.suffix.lower() != ".json"
-            or path.relative_to(docs).parts[0] not in ("skills", "refined")):
-        raise ValueError("Input must be a JSON asset in a docs/ Document package.")
-    packages = [p.parent for p in path.parents if p.name == "assets" and p.is_relative_to(docs)]
-    if not any((p / "SKILL.md").is_file() for p in packages):
-        raise ValueError("Input must be under a Document package assets/ with a SKILL.md entry.")
+    if path.is_relative_to(docs / "artifact" / "diagram"):
+        artifact_output(path, root, required=True)
+        if path.suffix.lower() != ".json":
+            raise ValueError("Diagram input must be a JSON file in docs/artifact/diagram/.")
+    else:
+        # Read existing packages for compatibility; newly authored originals live in diagram/.
+        if (not path.is_relative_to(docs) or path.suffix.lower() != ".json"
+                or path.relative_to(docs).parts[0] not in ("skills", "refined")):
+            raise ValueError("Input must be JSON in docs/artifact/diagram/ or a legacy Document package.")
+        packages = [p.parent for p in path.parents if p.name == "assets" and p.is_relative_to(docs)]
+        if not any((p / "SKILL.md").is_file() for p in packages):
+            raise ValueError("Legacy input must be under a Document package assets/ with a SKILL.md entry.")
     if not path.is_file():
         raise ValueError(f"JSON input does not exist: {path}")
     raw = path.read_bytes()
@@ -152,7 +165,10 @@ def parse_document(raw: bytes, source: str) -> dict:
         raise ValueError(f"Invalid JSON in {source}: {error}") from error
     kind = document.get("diagram_type") if isinstance(document, dict) else None
     if kind not in TYPES:
-        raise ValueError(f"Unsupported diagram_type {kind!r}. Supported here: architecture, sequence; ERD is unsupported.")
+        raise ValueError(f"Unsupported diagram_type {kind!r}. Supported here: architecture, sequence, erd.")
+    if kind == "erd":
+        erd.validate(document)
+        return document
     # The authored output is validated officially, but never used as a write destination.
     # Remote/custom brand fetching is outside this local rendering boundary.
     nodes = []
@@ -219,6 +235,44 @@ def render_snapshot(node: str, cli: Path, raw: bytes, kind: str, stage: Path) ->
     return validation, delivery, generated.read_bytes()
 
 
+def report_diagnostics(report) -> list[dict]:
+    """The official diagnostics, reduced to what an author needs to find and fix the problem."""
+    items = report.get("diagnostics") if isinstance(report, dict) else None
+    return [{key: item[key] for key in ("code", "severity", "message", "subject", "supportedFixes") if key in item}
+            for item in items or [] if isinstance(item, dict) and isinstance(item.get("message"), str)]
+
+
+def unclassified(diagnostics: list[dict]) -> bool:
+    return bool(diagnostics) and all(item.get("code") == "internal/unclassified" for item in diagnostics)
+
+
+def localized_failure(command: list[str], cwd: Path) -> list[dict]:
+    """Recover layout diagnostics the pinned CLI loses for locales without a built-in catalog.
+
+    The renderer writes a locale warning before its JSON diagnostic, so the CLI cannot parse it and reports
+    only an unclassified failure. Validating an English-locale copy of the same snapshot yields the real
+    diagnostics; that copy is diagnostic-only scratch and never rendered or delivered.
+    """
+    if len(command) < 5 or command[2] != "validate":
+        return []
+    try:
+        document = json.loads(Path(command[4]).read_bytes())
+        meta = document.get("meta")
+        if not isinstance(meta, dict) or meta.get("locale") in (None, "en"):
+            return []
+        meta["locale"] = "en"
+        copy = cwd / "diagnostic-input.json"
+        copy.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    except (OSError, ValueError, AttributeError):
+        return []
+    result = run_process([*command[:4], str(copy), *command[5:]], cwd=cwd)
+    try:
+        diagnostics = report_diagnostics(json.loads(result.stdout))
+    except ValueError:
+        return []
+    return [] if not result.returncode or unclassified(diagnostics) else diagnostics
+
+
 def official(command: list[str], cwd: Path) -> dict:
     result = run_process(command, cwd=cwd)
     try:
@@ -226,6 +280,12 @@ def official(command: list[str], cwd: Path) -> dict:
     except ValueError:
         report = None
     if result.returncode:
+        diagnostics = report_diagnostics(report)
+        if unclassified(diagnostics):
+            diagnostics = localized_failure(command, cwd) or diagnostics
+        if diagnostics:
+            lines = "\n".join(f"- {item['message']}" for item in diagnostics)
+            raise ArchifyError(f"Official Archify failed:\n{lines}", diagnostics)
         diagnostic = result.stdout.strip() or result.stderr.strip() or f"exit {result.returncode}"
         if result.stdout.strip() and result.stderr.strip():
             diagnostic += "\n" + result.stderr.strip()
@@ -280,6 +340,8 @@ def execute(args) -> dict:
     if args.command == "preview":
         raw = sys.stdin.buffer.read()
         document = parse_document(raw, "editor")
+        if document["diagram_type"] == "erd":
+            return erd.preview(document)
         node, cli = renderer(args.tool_dir)
         with tempfile.TemporaryDirectory(prefix="agent-factory-archify-preview-") as scratch:
             _, _, html = render_snapshot(node, cli, raw, document["diagram_type"], Path(scratch))
@@ -287,9 +349,13 @@ def execute(args) -> dict:
         parsed.feed(html.decode("utf-8"))
         if not parsed.svg or parsed.depth:
             raise ArchifyError("Official renderer returned no complete SVG diagram.")
-        return {"ok": True, "title": document["meta"]["title"], "type": document["diagram_type"],
-                "svg": "".join(parsed.svg), "styles": "".join(parsed.styles),
-                "version": LOCK["version"], "commit": LOCK["commit"]}
+        result = {"ok": True, "title": document["meta"]["title"], "type": document["diagram_type"],
+                  "svg": "".join(parsed.svg), "styles": "".join(parsed.styles),
+                  "version": LOCK["version"], "commit": LOCK["commit"]}
+        if getattr(args, "viewer", False):
+            # The unmodified official viewer; the host decides how its scripts may run.
+            result["html"] = html.decode("utf-8")
+        return result
     root = unlinked_path(args.project_root)
     if not root.is_dir():
         raise ValueError("--project-root must be an existing directory.")
@@ -301,18 +367,25 @@ def execute(args) -> dict:
         output = artifact_path(args.output, root)
         if os.path.lexists(output):
             raise ValueError("Output already exists; choose a new filename. Input and existing files were preserved.")
-    node, cli = renderer(args.tool_dir)
+    node, cli = renderer(args.tool_dir) if kind != "erd" else (None, None)
     with tempfile.TemporaryDirectory(prefix="agent-factory-archify-") as scratch:
         stage = Path(scratch)
-        if output is None:
+        if kind == "erd":
+            document = json.loads(raw)
+            validation = erd.validate(document)
+            if output is not None:
+                html = erd.html(document)
+                delivery = {"ok": True, "renderer": "agent-factory-erd", "version": erd.VERSION}
+        elif output is None:
             snapshot = stage / "input.json"
             snapshot.write_bytes(raw)
             validation = official([node, str(cli), "validate", kind, str(snapshot), "--json"], stage)
         else:
             validation, delivery, html = render_snapshot(node, cli, raw, kind, stage)
         result = {"ok": True, "input": str(source), "type": kind,
-                  "inputSha256": hashlib.sha256(raw).hexdigest(), "version": LOCK["version"],
-                  "commit": LOCK["commit"], "validation": validation}
+                  "inputSha256": hashlib.sha256(raw).hexdigest(), "validation": validation}
+        result.update({"version": erd.VERSION, "renderer": "agent-factory-erd"} if kind == "erd"
+                      else {"version": LOCK["version"], "commit": LOCK["commit"]})
         if output is None:
             return result
         # Delivery sidecars are scratch only: their bindings describe the private staged

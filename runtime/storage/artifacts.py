@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-DOMAINS = ("output", "media", "data", "model", "software", "interactive", "evidence", "release", "other")
+DOMAINS = ("output", "media", "diagram", "data", "model", "software", "interactive", "evidence", "release", "other")
 CONTROL_FILES = ("index.json",)
 
 

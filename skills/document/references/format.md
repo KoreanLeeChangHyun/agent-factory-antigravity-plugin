@@ -9,25 +9,27 @@
 
 ### 1.1. Entry, references and package ownership
 
-- Packages contain `SKILL.md`, optional detailed `references/` and optional `assets/`;
-  no `scripts/` or `agents/`. A Refined `SKILL.md` does not activate it as a Skill.
+- Packages contain `SKILL.md`, optional detailed `references/` and, for Specifications,
+  `metadata.yaml`; no `assets/`, `scripts/` or `agents/`. A Refined `SKILL.md` does not activate it as a Skill.
 - Keep overview, essential guidance and links stating when to read each topic at the entry.
   Split hard-to-read or maintain detail into coherent `references/*.md`, without size thresholds or duplication.
 - Every reference MUST be reachable from `SKILL.md` through explicit relative Markdown links.
-  Every asset MUST have a relative link/image at its point of use in the entry or a reachable
-  reference. Optional folders may be absent; existing files must be linked. Read only needed links.
+  Every linked artifact MUST have a relative link/image at its point of use in the entry or a
+  reachable reference. Optional files may be absent; existing ones must be linked. Read only needed links.
 - Entry and references form one canonical package, sharing type, language, authority and
   provenance. Splitting creates neither a Specification nor a competing source.
 - Apply the mandatory [Document structure](#document-structure) to Markdown bodies.
 
-### 1.2. Assets and renderer representation
+### 1.2. Linked artifacts and renderer representation
 
-- Body and assets, including CSV/JSON, are editable sources. Store each JSON diagram,
-  system architecture, database/ERD or API design as a separate `assets/*.json`.
-  Reference it at use with a descriptive relative Markdown link, such as
-  `[System architecture](assets/system-architecture.json)`. Never duplicate/embed its JSON in Markdown.
-- Store independent CSV datasets and needed images in `assets/` too. Expanded asset displays
-  are derived, not editable peers. Do not assume a renderer; follow
+- Body and linked artifacts, including CSV/JSON, are editable sources. Store each diagram,
+  system architecture, database/ERD or API design as a separate file in `docs/artifact/diagram/`,
+  datasets in `docs/artifact/data/` and images in `docs/artifact/media/` ([Artifacts](../../convention/references/artifacts.md)).
+  Reference each at use with a descriptive relative Markdown link or image, such as
+  `[System architecture](../../artifact/diagram/system.architecture.json)` from `docs/skills/<package>/SKILL.md`.
+  Never duplicate/embed its content in Markdown or copy it into the package.
+- Existing package `assets/` stay readable until an authorized migration moves them. Expanded
+  artifact displays are derived, not editable peers. Do not assume a renderer; follow
   [Diagrams](../../convention/references/diagrams.md) for formats and readable text.
 
 <a id="document-structure"></a>

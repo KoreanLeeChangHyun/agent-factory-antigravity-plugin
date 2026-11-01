@@ -27,22 +27,20 @@
   what the performer needs for the task; Main's allocation reasons (profile, model,
   session), preparation steps and own preparation errors stay in Main's run records or
   allocation evidence, not in the brief.
-- <a id="rerun-or-new"></a>Re-run or new execution: when the Human corrects or adds to
-  performed work, Main asks whether the original Done still holds. If it does (the result
-  fell short, or a fix or missing part within the same Done), it is a re-run of the same
-  task: use `loop.py steer` while its run is active or `loop.py revise` after it ended,
-  keeping the performer and session. If Done must change (a new goal, another target, or
-  new work on top of a finished result), it is a new execution with a new brief whose
-  References name the earlier run. Right after dispatch Main tells the Human in one line
-  which it is (re-run with its round number, or new execution) and why. The Human talks
-  only to Main; an explicit Human choice to start fresh or keep fixing overrides Main's
-  judgment.
+- <a id="rerun-or-new"></a>Re-run or new execution: Main relays the Human's correction or
+  addition to performed work verbatim to the same performer and session, with `loop.py
+  steer` while its run is active or `loop.py revise` after it ended. A new brief, whose
+  References name the earlier run, is used only for a separate request or when the Human
+  asks to start fresh. Right after dispatch Main tells the Human in one line where the
+  message went.
 - An orchestrator brief is the short-term contract of its change, not a long-term work
   contract. It starts with a `Title:` line naming the work in a few words of the Human's
   language (the task title shown to the Human) and carries exactly four English-headed
-  sections: Goal, Scope (`### Do` and `### Do not` subheadings), Done (the Human-observable outcome
-  and the evidence that shows it, including task-specific deliverables) and References (the Human's source
-  message ID/time, related files, records, prior runs and source links) as short list items. It has no Report
+  sections: Goal (the Human's original message, attachments and corrections verbatim, in order),
+  Scope (`### Do` and `### Do not` subheadings), Done and References (the Human's source
+  message ID/time, attachment references as supplied and prior runs). Scope and Done hold
+  only what the Human stated; when the Human stated none, they say so. Its content follows
+  Main's [relay](../prompt/main.md#relay). It has no Report
   section: the runtime result form already requires the result, changed paths and checks.
   Headings stay English; the extension translates them for display. Its loop state is the
   project's record of it. A read-only brief needs no task-list JSON, announcement or
@@ -58,8 +56,7 @@
   Lookup routing follows the [lookup boundary](#lookup-boundary).
   The run's sandbox policy is unchanged, so delegated Work keeps its permissions.
   - Claude: `dontAsk` with an `--allowedTools` list and a `PreToolUse` hook on shell/edit tools.
-    Explorer native Write/Edit permissions name exact assigned files; the hook also rejects
-    symlink traversal. Main retains bounded web confirmation tools.
+    Main retains bounded web confirmation tools.
   - Codex: a session-flag `PreToolUse` hook (`runtime/hooks/orchestrator_guard.py`) on
     `Bash`, `apply_patch` and the sub-agent start tools. The runtime adds an exact-hash
     `hooks.state` trust entry to the user's Codex config on first use and fails the run if
@@ -115,8 +112,8 @@
   Main-only: Main starts `loop.py start --task-mode work` (or a verification route on
   explicit request) and never submits Work with `--task-mode orchestrate`.
 - `loop.py start --task-mode work --work-agent ID --request-file PATH` (also `--task-mode plan-work`) needs no Verification identity. Its completed Work
-  receipt ends the loop with terminal reason `work-completed`. Main applies
-  [result alignment](orchestration.md#result-alignment) to the bound result/receipt before reporting.
+  receipt ends the loop with terminal reason `work-completed`. Main relays the bound
+  result/receipt under [result relay](orchestration.md#result-relay).
 
 ### 2.2. Verification and revision controls
 

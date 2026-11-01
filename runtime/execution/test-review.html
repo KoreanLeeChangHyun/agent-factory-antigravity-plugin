@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Factory · Test review</title>
+  <style>
+    :root { color-scheme: light dark; font: 14px/1.5 system-ui, sans-serif; }
+    body { margin: 0 auto; padding: 24px; max-width: 1500px; background: Canvas; color: CanvasText; }
+    h1 { font-size: 22px; margin: 0 0 8px; } h2 { font-size: 17px; margin: 0 0 12px; }
+    button,input,select,textarea { font: inherit; padding: 7px 10px; border: 1px solid GrayText; border-radius: 4px; background: Field; color: FieldText; }
+    button { cursor: pointer; background: ButtonFace; color: ButtonText; } button:disabled { opacity: .55; cursor: default; }
+    :focus-visible { outline: 2px solid Highlight; outline-offset: 3px; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; margin-top: 24px; }
+    section { min-width: 0; } .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; align-items: center; }
+    #screen { display: block; width: 100%; height: auto; border: 1px solid GrayText; border-radius: 4px; cursor: crosshair; }
+    #screen[hidden] { display: none; } #text { flex: 1; min-width: 130px; }
+    textarea,select { box-sizing: border-box; width: 100%; } textarea { min-height: 80px; margin: 12px 0; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; }
+    .muted { opacity: .75; } #message { min-height: 24px; } #identity { overflow-wrap: anywhere; }
+    @media(max-width: 850px) { main { grid-template-columns: 1fr; } body { padding: 16px; } }
+  </style>
+</head>
+<body>
+  <h1>Test review</h1>
+  <p id="identity" class="muted">Loading the test session…</p>
+  <p id="message" role="status" aria-live="polite"></p>
+  <noscript>This review console needs JavaScript. The test session remains paused for your review.</noscript>
+  <main>
+    <section aria-labelledby="environment-title">
+      <h2 id="environment-title">Running environment</h2>
+      <p id="instructions">Click the browser screen to interact. Escape returns to review controls.</p>
+      <div class="controls"><button id="refresh">Refresh screen</button><button id="reload">Reload page</button><button id="escape">Send Escape to app</button></div>
+      <img id="screen" hidden tabindex="0" alt="Current browser viewport; click to interact" draggable="false">
+      <div id="typing" class="controls"><input id="text" aria-label="Text to enter into the focused browser field"><button id="type">Enter text</button></div>
+      <pre id="details" class="muted"></pre>
+    </section>
+    <section aria-labelledby="scenario-title">
+      <h2 id="scenario-title">Scenario review</h2>
+      <label for="scenario">Scenario</label><select id="scenario"></select>
+      <pre id="criteria"></pre>
+      <label for="note">Review note</label><textarea id="note"></textarea>
+      <div class="controls"><button id="pass">Confirm pass</button><button id="fail">Confirm failure</button></div>
+      <pre id="reviews"></pre>
+    </section>
+  </main>
+  <script>
+    const element = id => document.getElementById(id);
+    let session, scenarios = [], viewport, pending = Promise.resolve(), queued = 0;
+    async function api(action, input = {}) {
+      const response = await fetch('action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...input }) });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+      return data;
+    }
+    function run(callback) {
+      queued += 1;
+      document.body.setAttribute('aria-busy', 'true');
+      pending = pending.then(async () => {
+        element('message').textContent = '';
+        try { await callback(); } catch (error) { element('message').textContent = error.message; }
+        finally { queued -= 1; if (!queued) document.body.setAttribute('aria-busy', 'false'); }
+      });
+      return pending;
+    }
+    function criteria() {
+      const scenario = scenarios.find(item => item.id === element('scenario').value);
+      element('criteria').textContent = (scenario?.checks || []).map(check => check.id + ': ' + check.operator + ' ' + JSON.stringify(check.expected)).join('\n');
+    }
+    async function state() {
+      const response = await fetch('state');
+      const value = await response.json(); session = value.state; scenarios = value.scenarios;
+      element('identity').textContent = session.name + ' · ' + session.session + ' · build ' + session.build.id.slice(0, 12) + ' · generation ' + session.generation;
+      const selection = element('scenario');
+      if (!selection.options.length) for (const item of scenarios) selection.add(new Option(item.title, item.id));
+      element('reviews').textContent = scenarios.map(item => item.title + ': ' + (session.humanReview[item.id]?.verdict || 'pending')).join('\n');
+      const active = session.executionStatus === 'reviewing';
+      for (const id of ['pass', 'fail', 'type', 'reload', 'refresh', 'escape']) element(id).disabled = !active;
+      if (!active) element('message').textContent = 'Review is paused or finished. Open review again from Agent Factory to continue.';
+      criteria();
+    }
+    async function observe() {
+      const value = await api('observe');
+      if (value.screenshot) {
+        viewport = value.viewport;
+        element('screen').src = value.screenshot.split(/[\\/]/).pop();
+        element('screen').hidden = false;
+        element('details').textContent = value.url || '';
+      } else {
+        element('screen').hidden = true;
+        element('typing').hidden = true;
+        element('reload').hidden = true;
+        element('escape').hidden = true;
+        element('instructions').textContent = session.driver === 'vscode' ? 'Review the designated VS Code development window directly, then record each scenario result here.' : 'Review the command output and actual results, then record each scenario result here.';
+        element('details').textContent = JSON.stringify(value, null, 2);
+      }
+    }
+    async function act(input) { await api('act', { input: { scenario: element('scenario').value, ...input } }); await observe(); await state(); }
+    element('refresh').onclick = () => run(observe);
+    element('reload').onclick = () => run(() => act({ action: 'reload' }));
+    element('escape').onclick = () => run(() => act({ action: 'press', key: 'Escape' }));
+    element('type').onclick = () => run(async () => { await act({ action: 'type', text: element('text').value }); element('text').value = ''; });
+    element('screen').onclick = event => run(async () => {
+      const bounds = event.target.getBoundingClientRect();
+      await act({ action: 'click', x: (event.clientX - bounds.left) * viewport.width / bounds.width, y: (event.clientY - bounds.top) * viewport.height / bounds.height });
+      element('screen').focus();
+    });
+    element('screen').onkeydown = event => {
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return;
+      event.preventDefault();
+      if (event.key === 'Escape') { element('refresh').focus(); return; }
+      const key = (event.ctrlKey ? 'Control+' : '') + (event.metaKey ? 'Meta+' : '') + (event.altKey ? 'Alt+' : '') + (event.shiftKey && event.key.length > 1 ? 'Shift+' : '') + (event.key === ' ' ? 'Space' : event.key);
+      void run(() => act({ action: 'press', key }));
+    };
+    element('screen').onwheel = event => { event.preventDefault(); void run(() => act({ action: 'scroll', x: event.deltaX, y: event.deltaY })); };
+    element('scenario').onchange = criteria;
+    for (const [id, verdict] of [['pass', 'passed'], ['fail', 'failed']]) element(id).onclick = () => run(async () => {
+      await api('verdict', { scenario: element('scenario').value, verdict, note: element('note').value });
+      await state(); element('message').textContent = 'Review result saved.';
+    });
+    void run(async () => { await state(); if (session.executionStatus === 'reviewing') await observe(); });
+  </script>
+</body>
+</html>

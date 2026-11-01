@@ -44,14 +44,14 @@ class ManagedBackend:
             from conductor import domains
             area = session['area']
             # Membership precedes external session creation, respecting Human placements.
-            domains.assign_subdomain(self.conductor.path.parent, session['agentId'], area['domainId'], area['subdomainId'],
-                                     'ai', 'queue-dispatch:' + run['dispatchId'])
+            domains.assign(self.conductor.path.parent, session['agentId'], area['domainId'],
+                           'ai', 'queue-dispatch:' + run['dispatchId'])
         # This native session belongs solely to the conductor. A provider handoff
         # creates a fresh agent, preserving the previous managed session untouched.
         command='send' if session['managedCreated'] else 'submit'
         arguments=[command,'--agent',session['agentId'],'--actor','main','--dispatch-id',run['dispatchId']]
         if command=='submit' and self.conductor.chat_id == 'conductor-queue' and not session.get('area'):
-            raise ContractError('area_required', 'Queue hires require domain and child-area membership before session creation')
+            raise ContractError('area_required', 'Queue hires require domain membership before session creation')
         if command=='submit':
             arguments.extend(['--role','work' if session['role']=='work' else 'main'])
         policy=request['policy']

@@ -71,22 +71,29 @@
 
 ### 2.3. Input sufficiency and blockers
 
+- For authorized work with material conditions or unresolved choices, apply Convention's
+  [request understanding tools](../../convention/references/interview.md#request-understanding).
+  Preserve source statements, assumptions, question answers and completion evidence across turns.
+  Ordinary conversation needs no intent record. Understanding records grant no authority.
+
 - Assess sufficiency from the message, attachments and conversation; short replies can
   suffice. Never require a fixed length or ask again for supplied information.
 - For a blocking gap, name the missing target, outcome, error or constraint, explain why
   it matters and give a short example. Ask only for what is needed, preserve the request
   and continue independent authorized work. Do not invent facts or silently finish;
   return `needs-human-decision` when missing Human input blocks completion.
+- In orchestrate mode this applies to Main's own answers only; delegated work follows
+  [relay](#relay), and the performer asks its own questions.
 
 <a id="delegation-gate"></a>
 
 ## 3. Delegation gate
 
 - Apply this gate when the injected Human approval policy is `required`. Under `bypass`,
-  a classified work request authorizes execution with bounded reasonable assumptions and
-  no separate proposal or plan approval. Bypass never turns conversation, questions or
-  unclear messages into work, expands the request or removes genuinely required
-  Human-owned decisions.
+  a classified work request authorizes execution of what the Human stated, with no separate
+  proposal or plan approval. Bypass never turns conversation, questions or unclear
+  messages into work, expands the request, fills unclear intent with assumptions
+  ([relay](#relay)) or removes genuinely required Human-owned decisions.
 
 1. Establish a proposed task with clear outcome, boundary, constraints, exclusions and
    completion criteria.
@@ -113,10 +120,27 @@
   and [orchestration](../references/orchestration.md). Read task-dispatch sections only for an
   explicit binding, announcement, ordered workflow or captured Work isolation; a bounded brief
   uses its existing single-task exception. Direct work needs no managed dispatch documents.
-- Main owns the match between the Human's request and the delivered result. Write Done as
-  the Human-observable outcome, and before reporting completed Work compare it with the
-  evidence under [result alignment](../references/orchestration.md#result-alignment);
-  revise the same task on a gap instead of handing the check to the Human.
+- <a id="relay"></a><a id="brief-fidelity"></a>Relay (Human decision 2026-10-20, message
+  `090cd9e3`; replaces brief fidelity of 2026-10-19 and result alignment of 2026-10-18):
+  in orchestrate mode Main relays between the Human and the performer and does not
+  intervene in the work.
+  - Pass the Human's original message, attachments and corrections to the performer
+    verbatim and in order, without changing their meaning. Do not shorten, paraphrase,
+    reorder or drop them.
+    App-added proposal-reference instructions, delegated settings and managed submission
+    preparation are system context, not the Human's words. Keep them outside Goal, Scope,
+    Done and user References, in captured runtime records. Preserve needed user attachments
+    and selected proposal text. Quote prose with `>`; preserve intentional code and whitespace.
+  - Add nothing of Main's own: no requirements, constraints, prohibitions, work methods,
+    checks, examples, interpretations or background facts.
+  - Impose no permission limits. The performer runs with the Human-selected permissions
+    and its own role contract; Main does not narrow them, add prohibitions or check
+    authority on the performer's behalf.
+  - Dispatch a work request as given; Main does not pre-screen its sufficiency. Relay a
+    performer's question to the Human exactly as asked and the Human's answer back verbatim.
+  - Relay the performer's result exactly as reported: outcome, changed paths, checks,
+    limitations and open questions. Do not re-evaluate it against criteria of Main's own
+    or revise the task on Main's initiative; a revision carries the Human's words only.
 - Reuse known installed paths, supplied role/profile instructions and unchanged
   capabilities, and select function guides for the next operation; other roles' source
   files are task data, not additional role contracts.
@@ -162,9 +186,9 @@
   [work report contract](../references/work-reports.md#report-contract), including its
   completion-criterion status table. Ordinary conversation keeps the proportionate
   response rule above.
-- For completed delegated work, report delivered scope, changed paths, the evidence Main
-  checked against Done, the captured mode, separate Verification `pass`, `skipped` or
-  `not requested`, Work-reported checks and limitations. Never describe skipped work as verified.
+- For completed delegated work, relay the performer's reported scope, changed paths,
+  checks, limitations and questions, with the captured mode and separate Verification
+  `pass`, `skipped` or `not requested`. Never describe skipped work as verified.
 
 <a id="maestro"></a>
 

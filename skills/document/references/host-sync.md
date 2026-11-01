@@ -45,6 +45,25 @@
   a conflict in any selected host changes none of them.
   `--check` reports outdated or conflicting hosts without changing anything (exit 1 if any).
   Unrelated destination packages and files are preserved.
+- `--status` is read-only and returns canonical/host/last-synced revisions, per-file
+  diagnoses, diffs, backup paths, interrupted/partial states and a `planId`. Host disk
+  state does not prove a running session consumed that revision; `sessionRevision` is
+  currently unconfirmed. The Control Center's Documents header shows sync state;
+  clicking it opens details for existing host directories without creating or syncing them.
+- The header's **Sync** button runs ordinary synchronization only for existing hosts
+  with ownership manifests. It rechecks the displayed `syncPlanId`, uses the returned
+  `syncHosts` rather than webview-supplied paths, and blocks duplicate execution while
+  running. Status refresh and completion preserve an open document; errors open the
+  diagnostic detail. The button never invokes `--reconcile` or adopts unowned copies.
+  Missing targets require explicit CLI host setup; no targets are inferred from a
+  host directory alone. External source/copy changes refresh the header through the
+  document watchers. Disk state still does not establish session consumption.
+- Diagnoses distinguish canonical changes, independent host changes, matching content
+  with stale metadata, already-incorporated changes, text merge candidates, conflicts,
+  unknown ownership and missing baselines. Successful sync retains content-addressed
+  baseline bytes alongside each host's manifest. Older manifests may have no baseline;
+  never guess their ancestor. Three-way diagnosis requires a verified baseline and Git;
+  clean text merges do not establish semantic correctness or approval.
 - A new package may be created only when its destination does not exist. Existing unowned
   packages conflict even when byte-identical; legacy mirrors and explicit exports are never
   automatically adopted. Missing manifests grant no ownership; malformed manifests fail closed.
@@ -60,6 +79,10 @@
   backup path. Missing or corrupt ownership can recover source-named packages; unrelated
   packages remain untouched. Valid ownership and journals also identify obsolete managed
   packages. Destination-only edits within affected packages are preserved in the backup.
+- After reviewing a status plan, pass `--expect-plan <planId>` with the same `--host`
+  selection to reject source, target or control-state changes since that review.
+  This applies to normal sync and recovery. Reconciliation still covers the selected
+  hosts' managed/source-named packages; it is not a per-file merge or reverse import.
 - Legacy explicit exports do not create ownership records. Use synchronization for ongoing
   maintenance; importing a legacy export requires the explicit recovery authorization above.
 - Removing a source package removes only its unchanged owned output. An empty source root
@@ -68,8 +91,8 @@
 
 ### 2.4. Journaling, concurrency and errors
 
-- Symlinks, unsupported files and unsafe manifest paths are rejected. The OS lock at
-  `.codex/.document-sync/lock` excludes concurrent sync processes and releases on forced exit.
+- Symlinks, unsupported files and unsafe manifest paths are rejected. Each selected
+  host's `.document-sync/lock` excludes concurrent sync processes and releases on forced exit.
   Keep its file in place. A legacy lock directory requires confirming no old writer is running
   before manual removal.
 - Writes are atomic per file, not across the tree. `pending.json` records previous and planned
@@ -78,6 +101,14 @@
   backs up partial output and finishes synchronization without manually clearing records.
   Invalid journals still require restoring a trusted record; do not delete them to bypass
   a conflict. Source changes during copying leave a recoverable journal instead of success.
+- One invocation freezes source hashes and bytes once and locks all selected hosts in
+  stable order. It rechecks the planned targets before applying, checks each changed
+  path before replacement/deletion, and verifies source and output before completion.
+  A per-host `batch.json` records the common plan/source revision, selected/completed
+  hosts and partial completion. A later failure is not an all-host rollback: inspect
+  the partial state and journals, then recover explicitly when required. `--check`
+  also reports incomplete batches. An already-current successful retry clears batch
+  incompleteness without claiming that every host changed atomically.
 - Keep source, destination and state trees stable during invocation. The lock coordinates this
   CLI, not editors or hostile concurrent filesystem writers. Hashes track content and directory
   shape, not permission or timestamp edits. Relative links and file bytes remain unchanged.

@@ -34,6 +34,18 @@ PRIVATE_KEY = re.compile(r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIV
 KNOWN_TOKEN = re.compile(r"\b(?:sk-(?:proj-|ant-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})\b")
 SECRET_FLAG = re.compile(r"(?i)^--?(?:[\w-]*(?:password|passwd|secret|api[-_]?key|token)|authorization)$")
 URL_PASSWORD = re.compile(r"(\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s/@:]+:)[^\s/@]+(@)")
+SECRET_ARGUMENT = re.compile(r"(?i)(--?(?:[\w-]*(?:password|passwd|secret|api[-_]?key|token)|authorization)\s+)(?:\"[^\"]*\"|'[^']*'|\S+)")
+# SECRET_TEXT, SECRET_ARGUMENT and URL_PASSWORD define what is masked; redact() applies them as linear
+# scans. Their key or scheme must end right before a separator outside its own character run, so each
+# run is examined once instead of once per start position (quadratic on long hyphenated or base64url text).
+_BOUNDARY = re.compile(r"\b")
+_KEY_CHAR = re.compile(r"[\w-]")
+_TEXT_KEY = re.compile(r"(?i)(?:(api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret)|authorization|cookie)(?![\w-])")
+_TEXT_VALUE = re.compile(r"[\"']?\s*[:=]\s*(\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;}]+)")
+_ARGUMENT_KEY = re.compile(r"(?i)(?:(password|passwd|secret|api[-_]?key|token)|authorization)(?![\w-])")
+_ARGUMENT_VALUE = re.compile(r"\s+(\"[^\"]*\"|'[^']*'|\S+)")
+_URL_SCHEME = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-")
+_URL_PASSWORD = re.compile(r"://[^\s/@:]+:([^\s/@]+)@")
 OPAQUE_KEYS = {"encrypted_content", "encryptedcontent", "signature", "token", "sessiontoken"}
 ENVIRONMENT_KEYS = {"env", "environment", "processenv", "environmentvariables"}
 
@@ -61,10 +73,70 @@ def redact(value):
         value = PRIVATE_KEY.sub("[REDACTED PRIVATE KEY]", value)
         value = KNOWN_TOKEN.sub("[REDACTED TOKEN]", value)
         value = BEARER.sub(r"\1[REDACTED]", value)
-        value = URL_PASSWORD.sub(r"\1[REDACTED]\2", value)
-        value = re.sub(r"(?i)(--?(?:[\w-]*(?:password|passwd|secret|api[-_]?key|token)|authorization)\s+)(?:\"[^\"]*\"|'[^']*'|\S+)", r"\1[REDACTED]", value)
-        return SECRET_TEXT.sub(r"\1[REDACTED]", value)
+        value = _mask(value, _url_passwords(value))
+        value = _mask(value, _keyed_values(value, _ARGUMENT_KEY, _ARGUMENT_VALUE, _argument_start))
+        return _mask(value, _keyed_values(value, _TEXT_KEY, _TEXT_VALUE, _text_start))
     return value
+
+
+def _mask(value, spans):
+    """Replace each (start, end) span, in order and non-overlapping, with the redaction marker."""
+    output, kept = [], 0
+    for start, end in spans:
+        output += (value[kept:start], "[REDACTED]")
+        kept = end
+    return "".join(output) + value[kept:] if output else value
+
+
+def _text_start(value, floor, key):
+    # `\b[\w-]*key` may start at any boundary of the key's run up to the key; a bare authorization/cookie needs one at the key.
+    index = key.start()
+    if key.group(1) is None:
+        return _BOUNDARY.match(value, index) is not None
+    while not _BOUNDARY.match(value, index):
+        if index == floor or not _KEY_CHAR.match(value, index - 1):
+            return False
+        index -= 1
+    return True
+
+
+def _argument_start(value, floor, key):
+    # `--?[\w-]*key` starts at a dash of the key's run before the key; a bare authorization needs it immediately before.
+    index = key.start()
+    if key.group(1) is None:
+        return index > floor and value[index - 1] == "-"
+    while index > floor and _KEY_CHAR.match(value, index - 1):
+        index -= 1
+        if value[index] == "-":
+            return True
+    return False
+
+
+def _keyed_values(value, key_pattern, value_pattern, start_allowed):
+    """Leftmost-first value spans of `<start>[word or dash]*key<separator>value`; a key ends where its run ends."""
+    floor = cursor = 0  # floor: end of the previous masked value, the earliest start of the next match
+    while (key := key_pattern.search(value, cursor)) is not None:
+        cursor = key.end()
+        tail = value_pattern.match(value, cursor) if start_allowed(value, floor, key) else None
+        if tail is not None:
+            yield tail.span(1)
+            floor = cursor = tail.end()
+
+
+def _url_passwords(value):
+    """Password spans of URL_PASSWORD: the scheme is the character run ending at `://`."""
+    cursor = 0
+    while (separator := value.find("://", cursor)) != -1:
+        start = separator
+        while start > cursor and value[start - 1] in _URL_SCHEME:
+            start -= 1
+        tail = _URL_PASSWORD.match(value, separator)
+        if tail is not None and any(value[index].isascii() and value[index].isalpha() and _BOUNDARY.match(value, index)
+                                    for index in range(start, separator)):
+            yield tail.span(1)
+            cursor = tail.end()
+        else:
+            cursor = separator + 1
 
 
 class StreamRedactor:

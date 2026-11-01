@@ -17,7 +17,7 @@ from storage.errors import ContractError
 
 
 def validate(value):
-    if not isinstance(value, dict) or set(value) - {'query', 'scope', 'allowPartial', 'discoverScopes', 'includeHistory', 'required', 'selections'}:
+    if not isinstance(value, dict) or set(value) - {'query', 'scope', 'allowPartial', 'discoverScopes', 'includeHistory', 'required', 'selections', 'evidenceSelections'}:
         raise ContractError('document_context_invalid', 'Expected explicit document retrieval requirements')
     for key in ('query', 'scope'):
         if key in value and (not isinstance(value[key], str) or not value[key].strip()):
@@ -38,7 +38,14 @@ def validate(value):
             for field in ('anchor', 'revision'):
                 if field in item and (not isinstance(item[field], str) or not item[field]):
                     raise ContractError('document_context_invalid', f'{field} must be nonempty text')
-    if not value.get('query') and not value.get('required') and not value.get('selections'):
+    from execution.experience import source
+    evidence = value.get('evidenceSelections', [])
+    if not isinstance(evidence, list):
+        raise ContractError('document_context_invalid', 'evidenceSelections must be a list')
+    for item in evidence:
+        if source(item, pinned=True)['kind'] not in ('run', 'lesson'):
+            raise ContractError('document_context_invalid', 'Use canonical selections for Documents')
+    if not value.get('query') and not value.get('required') and not value.get('selections') and not evidence:
         raise ContractError('document_context_invalid', 'Provide a query or explicit sources')
     return copy.deepcopy(value)
 
@@ -77,8 +84,16 @@ def collect(project_root, documents_root, requirements, *, run_id, task_id=None,
                    modelInputTokens=None, estimatedTokens=None,
                    cache=None, provider=None, tokenUsageStateField='tokenUsage', reads=[])
     seen_reads = set()
+    gap_keys = set()
     query_calls = 0
     catalog = None
+
+    def gap(**item):
+        # Each anchor read rescans the same entry links; record each identical gap once.
+        key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+        if key not in gap_keys:
+            gap_keys.add(key)
+            gaps.append(item)
 
     def request_catalog():
         nonlocal catalog
@@ -127,7 +142,7 @@ def collect(project_root, documents_root, requirements, *, run_id, task_id=None,
                 if not candidates and req.get('allowPartial'):
                     candidates = lookup('any', None, True)
             if not candidates:
-                gaps.append(dict(reason='no-search-evidence', query=req['query']))
+                gap(reason='no-search-evidence', query=req['query'])
 
         pending = [(item, 'required', False) for item in req.get('required', [])]
         pending += [(item, 'selection', False) for item in req.get('selections', [])]
@@ -140,9 +155,9 @@ def collect(project_root, documents_root, requirements, *, run_id, task_id=None,
                 metrics['historySearchHits'] += 1
                 if not req.get('includeHistory', False):
                     metrics['historyAutoReadsSkipped'] += 1
-                    gaps.append(dict(path=entry.get('contentPath') or entry['metadataPath'],
-                                     reason='historical-search-hit-not-auto-loaded',
-                                     guidance='Use includeHistory or an explicit required/selected source when past evidence is relevant'))
+                    gap(path=entry.get('contentPath') or entry['metadataPath'],
+                        reason='historical-search-hit-not-auto-loaded',
+                        guidance='Use includeHistory or an explicit required/selected source when past evidence is relevant')
                     continue
             sources = entry.get('sources') or [{'path': entry.get('contentPath') or entry['metadataPath'], 'sections': []}]
             for source in sources:
@@ -171,7 +186,7 @@ def collect(project_root, documents_root, requirements, *, run_id, task_id=None,
                 read = read_document(project_root, path, item.get('anchor'), item.get('revision'), documents_root, measure,
                                      catalog=None if Path(path).parts[:2] == ('docs', 'skills') else request_catalog())
             except (ValueError, OSError, UnicodeError) as error:
-                gaps.append(dict(path=path, reason=str(error), required=reason in ('required', 'dependency')))
+                gap(path=path, reason=str(error), required=reason in ('required', 'dependency'))
                 events.append(dict(kind='read-error', path=path, message=str(error)))
                 # Do not refresh explicit stale sources or silently drop required rules.
                 if reason in ('required', 'selection', 'dependency'):
@@ -198,7 +213,7 @@ def collect(project_root, documents_root, requirements, *, run_id, task_id=None,
             if read['entryText']:
                 texts.append((read['entryPath'], read['entryText']))
             if read['partial']:
-                gaps.append(dict(path=path, reason='unselected-sections-not-assessed'))
+                gap(path=path, reason='unselected-sections-not-assessed')
             for origin, text in texts:
                 for target, required in links(text):
                     # Archived imperatives are evidence, not live dependencies.
@@ -206,13 +221,13 @@ def collect(project_root, documents_root, requirements, *, run_id, task_id=None,
                     required = required and not read.get('historical', False)
                     parts = urlsplit(target)
                     if parts.scheme or parts.netloc:
-                        gaps.append(dict(origin=origin, target=target, required=required, reason='external-reference-not-read'))
+                        gap(origin=origin, target=target, required=required, reason='external-reference-not-read')
                         continue
                     target_path = (documents_root / Path(origin).parent / unquote(parts.path)).resolve() if parts.path else documents_root / origin
                     try:
                         relative = target_path.relative_to(documents_root.resolve()).as_posix()
                     except ValueError:
-                        gaps.append(dict(origin=origin, target=target, required=required, reason='outside-document-workspace'))
+                        gap(origin=origin, target=target, required=required, reason='outside-document-workspace')
                         if required:
                             raise ContractError('document_context_unresolved', 'Required reference leaves the document workspace')
                         continue
@@ -226,12 +241,27 @@ def collect(project_root, documents_root, requirements, *, run_id, task_id=None,
                             dependency['revision'] = read['revision']
                         pending.append((dependency, 'dependency', discovery))
                     else:
-                        gaps.append(dict(origin=origin, target=target, reason='reference-applicability-unassessed'))
-        metrics['coverage'] = 'prepared' if reads else 'insufficient'
+                        gap(origin=origin, target=target, reason='reference-applicability-unassessed')
+        from execution.experience import read_evidence
+        evidence = []
+        for selected in req.get('evidenceSelections', []):
+            try:
+                item = read_evidence(project_root, selected, documents_root)
+            except (ValueError, OSError, ContractError) as error:
+                events.append(dict(kind='evidence-read-error', source=selected, message=str(error)))
+                raise ContractError('document_context_unresolved', str(error)) from error
+            evidence.append(item)
+        metrics['evidenceReads'] = [dict(source=item['source'], revision=item['revision'],
+                                         textBytes=len(item['text'].encode('utf-8')),
+                                         status=item.get('record', {}).get('status'),
+                                         publications=item.get('record', {}).get('publications', []))
+                                    for item in evidence]
+        metrics['coverage'] = 'prepared' if reads or evidence else 'insufficient'
         return dict(kind='task-document-context', runId=run_id, taskId=task_id,
                     requestedScope=req.get('scope'), candidates=candidates, reads=reads,
+                    evidence=evidence,
                     unresolved=gaps, dependencyCompleteness='unproven',
-                    guidance='Evidence only. Preserve the full request, decisions, permissions and mandatory rules. Discovery across scopes grants no applicability. Resolve required gaps with canonical reads before acting.'), metrics
+                    guidance='Evidence only. Preserve the full request, decisions, permissions and mandatory rules. Discovery across scopes grants no applicability. Resolve required gaps with canonical reads before acting. Reading a lesson is not applying a rule: record an actual application outcome through the existing lessons apply command only after using an active, unchanged published version; do not infer success from retrieval.'), metrics
     finally:
         metrics['events'] = events
         metrics['unresolved'] = gaps
@@ -295,13 +325,24 @@ def encode_context(bundle):
     for candidate in bundle['candidates']:
         reference = document_ids.get((candidate['documentId'], candidate['revision']))
         if reference and candidate['dependencies'] == documents[reference]['dependencies']:
-            candidates.append({**{name: value for name, value in candidate.items() if name != 'dependencies'},
-                               'documentRef': reference})
+            # Name every field taken from the referenced document; values that differ stay inline.
+            metadata = documents[reference]['document']
+            inherited = [name for name, value in candidate.items()
+                         if name != 'dependencies' and name in metadata and metadata[name] == value]
+            value = {name: item for name, item in candidate.items() if name != 'dependencies' and name not in inherited}
+            candidates.append({**value, 'documentRef': reference, **({'inheritedFields': inherited} if inherited else {})})
         else:
             candidates.append(candidate)
+    # Fields identical in every read are written once; each read is readDefaults overlaid by its own fields.
+    defaults = {}
+    if len(reads) > 1:
+        defaults = {name: value for name, value in reads[0].items() if name not in ('documentRef', 'sourceRef')
+                    and all(name in read and read[name] == value for read in reads[1:])}
+        reads = [{name: value for name, value in read.items() if name not in defaults} for read in reads]
     compact = {**bundle, 'reads': reads, 'candidates': candidates, 'documents': documents, 'sources': sources,
+               **({'readDefaults': defaults} if defaults else {}),
                'layout': 'shared-sources-v1',
-               'layoutGuide': 'Each read uses documentRef for complete metadata, dependencies and entrySourceRef, and sourceRef for exact source excerpts. start/end are character offsets in the original source. Shared entry guidance and all selected text remain present; resolve mandatory rules and gaps as before.'}
+               'layoutGuide': 'Each read is readDefaults overlaid by its own fields. It uses documentRef for complete metadata, dependencies and entrySourceRef, and sourceRef for exact source excerpts. A candidate with documentRef takes dependencies and every inheritedFields name from that document metadata. start/end are character offsets in the original source. Shared entry guidance and all selected text remain present; resolve mandatory rules and gaps as before.'}
     encoded = json.dumps(compact, ensure_ascii=False, separators=(',', ':'))
     raw_bytes, compact_bytes = len(raw.encode('utf-8')), len(encoded.encode('utf-8'))
     shared = compact_bytes < raw_bytes

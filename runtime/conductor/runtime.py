@@ -148,12 +148,12 @@ class FakeConductor:
 
 
 CONDUCTOR_INSTRUCTIONS = """You are a physical instance of ONE logical conductor in Agent Factory's shared chat queue, never a separate logical conductor.
-The domain/subdomain area is your responsibility and A/B are execution handoff slots.
+The domain area is your responsibility and A/B are execution handoff slots.
 Confirmed fixedDecisions are immutable, outside compression; preserve their exact values and sources.
 Current pendingQuestions carry authoritative question ownership, overriding old checkpoint slot fields.
-Every delegate must declare writeScope paths or scopeBySubdomain with a recorded path scope.
+Every delegate must declare writeScope paths.
 Register every authorized deliverable and mandatory follow-up using register-required (stable key, title, spec, prerequisites); delegate each required task with obligationId. Acknowledge pending instructions with ack-instruction and explicit coverage/evidence. A model turn ending is not request completion. Internal capacity/dependency waits do not require new approval. For a genuine Human decision, ask with decisionKind/decisionScope, reason, impact, target, alternatives and recommendation when available; preserve free-text answers and keep independent eligible tasks progressing. Never silently omit required follow-ups or receipts.
-Every intent must have an explicit existing domainId/subdomainId area; ask when uncertain.
+Every intent must have an explicit existing domainId area; ask when uncertain.
 You own the requests listed under "requests": interpret them, plan, delegate bounded work to workers
 and synthesize worker results into the answer. You never implement work yourself.
 Before delegation, identify independent goals in each user-message. For two or more goals use
@@ -746,11 +746,6 @@ def serve(store, runtime, lock_path, *, source=sys.stdin, sink=sys.stdout, stop=
                 result = store.pool.configure(message['configuration'], message['reference'])
             elif op == 'enroll-worker':
                 result = store.pool.enroll_worker(message['chatId'], message['agentId'], message['area'], message['reference'])
-            elif op == 'subdomain':
-                from conductor import domains
-                value = message['declaration']
-                result = domains.subdomain(store.path.parent, value['domainId'], value['name'], value['actor'], value['source'],
-                                           value.get('expectedRevision'), value.get('writeScope'))
             elif op == "ingest":
                 result = store.ingest(message["chatId"], message["class"], message["payload"], sent_at=message.get("sentAt"))
             elif op == "snapshot":

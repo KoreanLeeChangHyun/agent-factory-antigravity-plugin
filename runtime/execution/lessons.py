@@ -171,8 +171,7 @@ def is_saved(pending):
 
 
 def read_only(state):
-    return (state.get('workProfile') == 'explore' and state.get('roleBoundaryPolicy') != 1
-            or state.get('executionPolicy', {}).get('sandboxPolicy', {}).get('type') == 'read-only')
+    return state.get('executionPolicy', {}).get('sandboxPolicy', {}).get('type') == 'read-only'
 
 
 def record_root(project_root, state):
@@ -204,23 +203,6 @@ def document_workspace_available(project_root, state):
                (Path(project_root).is_relative_to(Path(unit['repositoryRoot'])) or
                 (Path(unit['repositoryRoot']) == Path(project_root) / 'docs' and Path(unit['path']).name == 'docs'))
                for unit in workspace.get('repositories') or [])
-
-def recorded_paths(states, workspace_id):
-    """Project-relative lesson files the runtime recorded into one code Work Unit."""
-    paths = set()
-    for state in states:
-        workspace = state.get('taskWorkspace')
-        if not isinstance(workspace, dict) or workspace.get('id') != workspace_id:
-            continue
-        for pending in captures(state):
-            try:
-                receipt = json.loads(pending.with_suffix('.receipt').read_text())
-            except (OSError, ValueError):
-                continue
-            if isinstance(receipt, dict) and receipt.get('saved') is True and isinstance(receipt.get('path'), str):
-                paths.add(receipt['path'])
-    return paths
-
 
 def pending_count(state):
     """Captures of this run that the project does not hold yet; never raises."""

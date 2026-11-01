@@ -63,7 +63,6 @@ CREATE TABLE IF NOT EXISTS resolver_handoffs(id TEXT PRIMARY KEY, delegation_id 
  source TEXT NOT NULL, settings TEXT NOT NULL, bundle TEXT NOT NULL, bundle_hash TEXT NOT NULL,
  created_at REAL NOT NULL);
 '''
-TIERS = ('expert', 'resolver')
 MEMORY_KINDS = ('working', 'episodic', 'semantic', 'procedural')
 SKILL_LAYERS = ('platform', 'domain', 'performer')
 SANDBOX_ORDER = ('read-only', 'workspace-write', 'danger-full-access')
@@ -828,7 +827,7 @@ class Performers:
         return {'configured': True, 'changed': True}
 
     def resolver_settings(self, c, delegation, *, binding=None):
-        """Explicitly selected resolver settings only: the delegation's domain/child setting, then the chat policy."""
+        """Explicitly selected resolver settings only: the delegation's domain setting, then the chat policy."""
         if binding and binding['handoff_id']:
             handoff = self.store.row(c, 'SELECT settings FROM resolver_handoffs WHERE id=?', binding['handoff_id'])
             if handoff:
@@ -836,11 +835,9 @@ class Performers:
         area = self.store.pool.get_area(c, 'delegation', delegation['id']) or {}
         policy = self.store.policy(c, delegation['chat_id'])
         chat = self.store.row(c, 'SELECT settings FROM chat_resolvers WHERE chat_id=?', delegation['chat_id'])
-        for aid in (area.get('subdomainId'), area.get('domainId')):
-            row = c.execute("SELECT settings FROM area_role_settings WHERE area_id=? AND role='resolver'", (aid,)).fetchone() if aid else None
-            if row:
-                settings = json.loads(row[0])
-                break
+        row = c.execute("SELECT settings FROM area_role_settings WHERE area_id=? AND role='resolver'", (area['domainId'],)).fetchone() if area.get('domainId') else None
+        if row:
+            settings = json.loads(row[0])
         else:
             raw = json.loads(chat['settings']) if chat else (policy.get('roleSettings') or {}).get('resolver')
             if not raw or not raw.get('model') or not raw.get('provider'):
@@ -852,10 +849,9 @@ class Performers:
         return settings
 
     def resolver_state(self, c, area, policy, chat_id=None):
-        for aid in (area.get('subdomainId'), area.get('domainId')):
-            row = c.execute("SELECT settings, source FROM area_role_settings WHERE area_id=? AND role='resolver'", (aid,)).fetchone() if aid else None
-            if row:
-                return {'state': 'configured', 'settings': json.loads(row[0]), 'source': row[1], 'inheritedFrom': aid}
+        row = c.execute("SELECT settings, source FROM area_role_settings WHERE area_id=? AND role='resolver'", (area['domainId'],)).fetchone() if area.get('domainId') else None
+        if row:
+            return {'state': 'configured', 'settings': json.loads(row[0]), 'source': row[1], 'inheritedFrom': area['domainId']}
         chat = self.store.row(c, 'SELECT settings, source FROM chat_resolvers WHERE chat_id=?', chat_id) if chat_id else None
         if chat:
             return {'state': 'configured', 'settings': json.loads(chat['settings']), 'source': chat['source'], 'inheritedFrom': 'chat'}

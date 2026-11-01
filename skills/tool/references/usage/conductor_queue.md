@@ -34,10 +34,7 @@ Required: `--input-json INPUT_JSON`
 ## `enroll-worker`: Adopt an explicitly attributed idle Work session with matching settings
 Required: `--input-json INPUT_JSON`
 
-## `pool-config`: Configure captured domain/subdomain employment limits and idle reuse
-Required: `--input-json INPUT_JSON`
-
-## `subdomain`: Add an explicit child area under an existing domain
+## `pool-config`: Configure captured domain employment limits and idle reuse
 Required: `--input-json INPUT_JSON`
 
 ## `init`: Create a chat with its captured policy (idempotent; a different policy conflicts)

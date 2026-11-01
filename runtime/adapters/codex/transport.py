@@ -25,6 +25,7 @@ from adapters.codex.capabilities import (  # noqa: F401 - re-exported; callers p
 )
 from adapters.codex.events import NotificationHandlers
 from adapters.codex import policy as codex_policy
+from hooks import team_inbox
 
 
 def service_tier(models: list[dict], model: str, fast: bool | None) -> str | None:
@@ -92,6 +93,10 @@ def fixed_instructions_present(thread: dict, instructions: str) -> bool:
         return False
     return present
 
+
+# Queued team messages reach an active turn this often; a failed steer waits longer before retrying.
+TEAM_CHECK_SECONDS = 2.0
+TEAM_RETRY_SECONDS = 30.0
 
 class FrameQueue(queue.Queue):
     def __init__(self):
@@ -420,6 +425,7 @@ class Bridge(NotificationHandlers):
         self.goal_start = None
         self.goal_started = False
         self.next_idle_goal_check = 0.0
+        self.next_team_check = 0.0
         # The run's own result turn parameters, and the single repair turn started from them.
         self.result_turn = None
         self.repair_turn_id = None
@@ -717,7 +723,13 @@ class Bridge(NotificationHandlers):
     def finish_turn(self, turn_id=None):
         """Emit the terminal result. False means a repair turn started and the run continues."""
         if not self.last_message:
-            raise NativeError("Native turn returned no final result")
+            # A completed turn can end on commentary alone; ask for the result as for an invalid one.
+            failure = "Native turn returned no final result"
+            if self.start_result_repair(failure):
+                return False
+            defect = NativeError(failure)
+            defect.code, defect.stage, defect.turn_id = "result_missing", "finish_turn", turn_id or self.turn_id
+            raise defect
         message = self.last_message
         try:
             terminal = json.loads(message)
@@ -822,6 +834,7 @@ class Bridge(NotificationHandlers):
                     if control["action"] != "get":
                         self.finish_control(control["action"])
                         return
+                self.steer_team_messages()
                 try:
                     event = self.rpc.event()
                 except queue.Empty:
@@ -851,6 +864,28 @@ class Bridge(NotificationHandlers):
                 except Exception:
                     self.runtime.record_goal_uncertainty(Path(self.state["statePath"]), "Native pause unconfirmed; refresh Goal before reopening")
             raise
+
+
+    def steer_team_messages(self):
+        """Hand queued team messages to the active turn between its steps, as the Claude hook does."""
+        if self.turn_id is None or self.thread_id is None or time.monotonic() < self.next_team_check:
+            return
+        self.next_team_check = time.monotonic() + TEAM_CHECK_SECONDS
+        try:
+            text, ids = team_inbox.collect(self.state["statePath"])
+            if not text:
+                return
+            self.rpc.call("turn/steer", {"threadId": self.thread_id, "expectedTurnId": self.turn_id,
+                                         "input": [{"type": "text", "text": text}]})
+            team_inbox.mark(self.state["statePath"], ids, "steer")
+        except Exception as error:  # noqa: BLE001 - delivery is auxiliary and must never end the run
+            # The turn may have just ended; the next turn or the agent's own inbox check delivers them.
+            self.next_team_check = time.monotonic() + TEAM_RETRY_SECONDS
+            from runs.trace import record
+            record(self.state, "team.steer.skipped", reason=str(error)[:300])
+            return
+        from runs.trace import record
+        record(self.state, "team.steer.delivered", messageIds=ids, turnId=self.turn_id)
 
 
 def bridge_services():
@@ -1123,7 +1158,11 @@ def main():
         Bridge(runtime, session, state, rpc).run(prompt)
         return 0
     except Exception as error:
-        emit({"type": "error", "message": str(error)[:4000]})
+        # Same diagnostic fields as the pooled path, so result_invalid stays a contract failure.
+        emit({"type": "error", "message": str(error)[:4000],
+              "code": getattr(error, "code", "native_backend_error"),
+              "stage": getattr(error, "stage", "adapter"), "turnId": getattr(error, "turn_id", None),
+              "requestId": getattr(error, "request_id", None)})
         return 1
     finally:
         # No detached service: parent containment owns this process and descendants.

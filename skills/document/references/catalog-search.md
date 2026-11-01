@@ -65,7 +65,9 @@
   In the shared layout, `reads` identify `documentRef`/`sourceRef`; `documents` retain metadata,
   dependencies and `entrySourceRef`. `sources` hold exact text ranges. `start`/`end` are Unicode
   code-point offsets in the original source; subtract the covering excerpt's `start` to slice
-  its text. Read all entry guidance once. Overlapping
+  its text. Fields identical in every read appear once in `readDefaults`; each read is those
+  defaults overlaid by its own fields. A candidate with `documentRef` takes its dependencies and
+  each `inheritedFields` name from that document's metadata. Read all entry guidance once. Overlapping
   selections share text, without dropping decisions, exceptions, hashes or unassessed sections.
 - Supply the returned `--revision <hash>` when reading to reject stale sources after
   body, reference, attachment or projected status changes. Hashes are rebuilt live;
@@ -109,7 +111,7 @@
   Narrow matching sections retain complete entry text. Explicit mandatory/exception links
   are followed recursively; ordinary references stay unloaded and listed as unassessed.
   The cue recognizer is conservative, not a semantic completeness proof. Unselected sections,
-  external links and unclear dependencies stay visible; resolve required gaps by canonical
+  external links and unclear dependencies stay visible, each identical gap once; resolve required gaps by canonical
   reading before acting. Missing required sources and stale explicit revisions block preparation.
 - Refined `history` search hits stay visible as historical candidates, without automatically
   loading their bodies. Set `includeHistory: true` when past evidence is relevant; explicit
@@ -127,7 +129,8 @@
   `sources`/`documents` references. Selected character ranges, entry guidance, provenance,
   decisions, dependency hashes and unresolved gaps remain present. Default CLI reads retain
   their inline format; `--compact` opts into source sharing. Small bundles keep the inline
-  layout when sharing would increase bytes. Model delivery uses compact JSON in either layout.
+  layout when sharing would increase bytes. CLI and model delivery use unindented JSON in
+  either layout; `--pretty` indents the same inline value for Human reading.
 - Run status exposes `documentContext` and per-attempt `documentContextAttempts`: search
   misses/failures, requeries, repeated path reads, sections, revisions, hashes, read latencies,
   snapshot file bytes, catalog build/reuse counts and delivered JSON bytes. Delivery adds

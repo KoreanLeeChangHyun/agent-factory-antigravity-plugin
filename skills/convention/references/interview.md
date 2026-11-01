@@ -1,5 +1,52 @@
 # Interview
 
+<a id="request-understanding"></a>
+
+## Request understanding tools
+
+- First distinguish conversation from authorized work. Inspect existing context and sources
+  before asking. Identify plausible interpretations and the actions each would change.
+  Progress on authorized actions appropriate across those interpretations; ask about material
+  goal, scope or completion differences. For incompatible constraints, explain the conflict
+  and propose a permitted repair; do not silently relax a Human condition.
+- Use `python3 <plugin-root>/scripts/exec.py intent <action> --project-root <root> --agent <main-id>`.
+  `show` lists records; add `--request-id <id>` for one. Mutations also require the current
+  `--run-id`, `--request-id`, `--expected-revision` and `--input-file <absolute-json-path>`.
+  Choose a stable request ID (the initiating run ID is suitable); revisions start at zero.
+  Keep separate objectives in separate records; short follow-ups and corrections preserve
+  their original request identity. Do not create records for greetings or ordinary answers.
+- `update` accepts `{"items":[...]}`. Each item has `id`, `kind` (`goal`, `target`,
+  `constraint`, `assumption`, `unknown`, `criterion`), `text`, `status` (`confirmed`,
+  `assumed`, `open`, `resolved`, `retired`), `origin` (`human` or `agent`), `required`
+  (boolean), and `source: {"runId":"...","quote":"exact captured request text"}`.
+  Human statements need an exact quote; agent interpretation may omit the quote and
+  cannot claim `confirmed`. Record material assumptions as assumptions, not decisions.
+  The runtime checks source existence and quotation, not the truth of an interpretation.
+  Change items by stable ID; prior values and sources remain in history.
+- `ask` accepts `{"itemId":"open-decision-id","question":{...}}`, using the existing
+  structured question schema below, including stable question ID, numbering, options,
+  pros and cons. Explain the missing decision and how answers change the outcome in
+  the question. It persists the question and emits `interview.question` with an `intent`
+  binding (`agentId`, `requestId`, `questionId`, `revision`); do not also emit a marker.
+  The chat preserves that binding on answer delivery via `send --intent-answer <JSON>`.
+  A linked answer stays `answered` until Main incorporates it into the conditions and
+  explicitly resolves the decision. Free-text replies remain valid; quote the captured
+  reply when resolving them. Never reinterpret clarification as execution approval.
+- Reload after a stale-revision error. Never reapply an old answer against new conditions
+  automatically. Duplicate identical answer delivery is idempotent; conflicting answers
+  require an explicit new correction. Keep independent authorized work progressing;
+  use `needs-human-decision` only when missing external input actually blocks completion.
+- Before reporting completion, `check` accepts `{"results":[{"itemId":"criterion-id",
+  "status":"satisfied|unsatisfied|unknown","evidence":"result evidence"}]}`.
+  Supply an entry for each active required criterion. Evidence is mandatory for a
+  satisfied claim. The report lists omitted/unsatisfied criteria and required unresolved
+  decisions; `reportedReady` is evidence coverage, never semantic proof or approval.
+  Any understanding update invalidates previous checks. Only close a ready request
+  with `update` input `{"closed":true}`; keep partial/blocked requests open.
+- Runtime prompt context supplies active records on subsequent Main turns. Treat it as
+  working data: source messages and explicit current corrections outrank model summaries.
+  Read history only as needed and report only material interpretation changes.
+
 <a id="scope"></a>
 
 ## 1. Scope

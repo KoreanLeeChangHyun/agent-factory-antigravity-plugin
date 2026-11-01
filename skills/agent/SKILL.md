@@ -71,6 +71,8 @@ metadata:
 | Current actor: execution controls or receipt recovery | [`references/managed-controls.md`](references/managed-controls.md) |
 | Current actor: runtime paths, permitted control, legacy record or progress repair | [`references/home-runtime.md`](references/home-runtime.md); only the affected storage/control section |
 | Current actor: collect, page or interpret diagnostic traces | [`references/runtime-diagnostics.md`](references/runtime-diagnostics.md) |
+| Current actor: find prior run evidence, inspect lesson history or select versioned execution context | [`references/experience-reuse.md`](references/experience-reuse.md) |
+| Current actor: message a teammate, read its inbox or use shared project memory | [`references/team-messages.md`](references/team-messages.md) |
 | Main: authorized commit/coordination; Explorer or Scribe: an explicit recording scope | [`references/role-exceptions.md`](references/role-exceptions.md); only the assigned section |
 | Host setup or readiness diagnosis | [`references/installation.md`](references/installation.md) |
 | Installed Fast/native Goal feature | [`references/native-fast-goal.md`](references/native-fast-goal.md) |

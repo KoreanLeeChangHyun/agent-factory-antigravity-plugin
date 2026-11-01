@@ -22,6 +22,7 @@ from storage import paths as runtime_paths  # noqa: E402
 from storage.errors import ContractError  # noqa: E402
 from storage.artifacts import artifact_output  # noqa: E402
 from storage.files import atomic_write_json, emit, error_document, file_lock, now, safe_read_json  # noqa: E402
+from system.browser import browser_environment, playwright_module  # noqa: E402
 
 NAME = "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
 
@@ -32,7 +33,7 @@ const { chromium } = require(request.module);
 (async () => {
   const log = [];
   const at = () => new Date().toISOString();
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: process.env.AGENT_FACTORY_CHROMIUM_PATH || undefined });
   try {
     const page = await browser.newPage({ viewport: request.viewport, deviceScaleFactor: request.scale });
     page.on('console', message => log.push({ at: at(), type: 'console', level: message.type(), text: message.text() }));
@@ -111,36 +112,6 @@ def named(value: str, what: str) -> str:
     return value
 
 
-def playwright_module(project_root: Path) -> str:
-    """An installed Node Playwright: PLAYWRIGHT_MODULE, the project and its ancestors, their sibling projects, global npm."""
-    explicit = os.environ.get("PLAYWRIGHT_MODULE")
-    if explicit:
-        return explicit
-    candidates = []
-    home = Path.home().resolve()
-    for directory in [project_root.resolve(), *project_root.resolve().parents]:
-        candidates.append(directory / "node_modules" / "playwright")
-        if directory != project_root.resolve() and directory != Path(directory.anchor):
-            try:
-                candidates += [child / "node_modules" / "playwright" for child in sorted(directory.iterdir()) if child.is_dir()]
-            except OSError:
-                pass
-        if directory == home:
-            break
-    try:
-        root = subprocess.run(["npm", "root", "-g"], capture_output=True, text=True, timeout=20).stdout.strip()
-        if root:
-            candidates.append(Path(root) / "playwright")
-    except (OSError, subprocess.SubprocessError):
-        pass
-    for candidate in candidates:
-        if (candidate / "package.json").is_file():
-            return str(candidate)
-    raise ContractError("playwright_unavailable", "No installed Node Playwright was found in the project, its ancestors and their "
-                        "sibling projects, or global npm. Set PLAYWRIGHT_MODULE to an installed node_modules/playwright; "
-                        "installing one needs the Human's approval.")
-
-
 def capture(args) -> dict:
     project_root, _ = project_storage(args)
     target = args.target
@@ -165,7 +136,7 @@ def capture(args) -> dict:
                "element": args.element, "fullPage": args.full_page, "timeoutMs": args.timeout_sec * 1000}
     try:
         finished = subprocess.run(["node", "-e", CAPTURE_SCRIPT, json.dumps(request)], capture_output=True, text=True,
-                                  timeout=args.timeout_sec * 4 + 60, cwd=str(project_root))
+                                  timeout=args.timeout_sec * 4 + 60, cwd=str(project_root), env=browser_environment(dict(os.environ)))
     except FileNotFoundError as error:
         raise ContractError("node_unavailable", "Node.js is required to run Playwright") from error
     lines = [line for line in finished.stdout.splitlines() if line.startswith("{")]

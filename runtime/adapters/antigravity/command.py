@@ -12,7 +12,7 @@ import tempfile
 from adapters.antigravity.control import goal_commands
 from adapters.antigravity.policy import NOTICES, effort_arguments, native_model, permission_arguments, sandbox, validate
 from storage.errors import ContractError
-from hooks import orchestrator_guard
+from hooks import orchestrator_guard, team_inbox
 from storage.files import atomic_write_json, safe_read_json
 from contracts.receipts import result_only_schema
 
@@ -56,7 +56,9 @@ def agent_definition(skills_root=SKILLS_ROOT):
             "mainAgent: true\n"
             "hidden: true\n"
             "inheritCustomizations: true\n"
-            "inheritMcp: false\n"
+            # The plugin's local tool server reaches the agent only through inherited MCP servers; `tools`
+            # limits built-in tools alone (verified with agy 1.4.8, 2026-10-28).
+            "inheritMcp: true\n"
             f"skills: [{json.dumps(str(skills_root))}]\n"
             f"tools: [{', '.join(AGENT_TOOLS)}]\n"
             "---\n"
@@ -97,8 +99,16 @@ GUARD_DESCRIPTION = "Agent Factory orchestrator-mode guard (installed by the Age
 def guard_files():
     manifest = {"name": GUARD_PLUGIN, "version": "1.0.0", "description": GUARD_DESCRIPTION}
     hooks = {"agent-factory-orchestrator-guard": {"PreToolUse": [{"matcher": "*", "hooks": [
-        {"type": "command", "command": orchestrator_guard.HOOK_COMMAND, "timeout": 30}]}]}}
-    return {"plugin.json": json.dumps(manifest, indent=2) + "\n", "hooks.json": json.dumps(hooks, indent=2) + "\n"}
+        {"type": "command", "command": orchestrator_guard.HOOK_COMMAND, "timeout": 30}]}]},
+             # Before each model step, queued team messages for the running agent become a system message.
+             # PreInvocation takes a flat handler list; agy silently skips the matcher-group form there.
+             "agent-factory-team-inbox": {"PreInvocation": [
+                 {"type": "command", "command": team_inbox.HOOK_COMMAND, "timeout": 10}]}}
+    from execution import tool_server_launch
+    command = tool_server_launch.command("antigravity")
+    servers = {"mcpServers": {tool_server_launch.NAME: {"command": command[0], "args": command[1:]}}}
+    return {"plugin.json": json.dumps(manifest, indent=2) + "\n", "hooks.json": json.dumps(hooks, indent=2) + "\n",
+            "mcp_config.json": json.dumps(servers, indent=2) + "\n"}
 
 
 def install_guard(home=None):
@@ -140,7 +150,7 @@ def prune_guards(plugins):
             command = json.loads(hooks)["agent-factory-orchestrator-guard"]["PreToolUse"][0]["hooks"][0]["command"]
             if Path(command.split(" ", 1)[1].strip("'\"")).exists():
                 continue  # Its plugin copy is still installed.
-            for name in ("plugin.json", "hooks.json"):
+            for name in ("plugin.json", "hooks.json", "mcp_config.json"):
                 (directory / name).unlink(missing_ok=True)
             directory.rmdir()
         except (OSError, ValueError, KeyError, IndexError, TypeError):

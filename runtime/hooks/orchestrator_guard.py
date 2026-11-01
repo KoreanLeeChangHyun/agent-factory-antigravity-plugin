@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""PreToolUse hook that keeps an orchestrator-mode Main from changing the project, a Codex Work
-run from starting sub-agents and an Explorer or Scribe Work run inside its profile.
+"""PreToolUse hook that keeps an orchestrator-mode Main from changing the project and a Codex Work
+run from starting sub-agents.
 
 Codex and Antigravity run this for tool calls. It is inert unless the provider process carries
-AGENT_FACTORY_ORCHESTRATOR_GUARD, which the runtime sets only for orchestrate Main runs, Codex
-Work runs and explore/scribe Work runs; the variable's content selects the rules.
+AGENT_FACTORY_ORCHESTRATOR_GUARD, which the runtime sets only for orchestrate Main runs and Codex
+Work runs; the variable's content selects the rules.
 Main: reads, bounded web checks, own records and receipt-bound commits via managed scripts.
-Work: everything except the tools that start a sub-agent.
-Explorer: reading, web lookups and exact assigned evidence Documents and own records; no sub-agents.
-Scribe: reading, read-only shell commands, Document scripts and file writes inside docs/; no web lookups.
+Work (every profile, Explorer and Scribe included): everything except the tools that start a sub-agent.
 Standard library only: hooks start a fresh interpreter for every tool call.
 
 Main's shell commands are allowed only when every part is understood: the guard splits the line as
@@ -97,23 +95,9 @@ SUBAGENT_TOOLS = ("spawn_agent", "resume_agent")
 WORK_REASON = ("Codex Work cannot start sub-agents: Codex has no read-only exploration sub-agent. Do the "
                "search and the work yourself; never use a sub-agent to review or verify this run's own work.")
 WORK_ENVIRONMENT = {ENV: json.dumps({"role": "work"})}
-# Work profiles the guard confines, and the provider tools that reach the web.
-PROFILES = ("explore", "scribe")
+
+# Antigravity tools that reach the web.
 AGY_WEB = {"search_web", "read_url_content"}
-# Agent Factory Document scripts each profile may run; never exec.py or loop.py, so only Main dispatches agents.
-PROFILE_SCRIPTS = {
-    "explore": ("search_documents.py", "lessons.py"),
-    "scribe": ("catalog_documents.py", "search_documents.py", "sync_documents.py", "export_documents.py", "lessons.py", "migrate_document_paths.py"),
-}
-PROFILE_REASONS = {
-    "explore": ("Explorer reads source and searches the web, writes only exact task-bound evidence Documents and own run records. "
-                "No code/configuration, shared Documents, Specifications, rule publication, agents or sub-agents."),
-    "scribe": ("Scribe researches, checks sources, writes, integrates and shortens Documents using public web search/read; "
-               "writes stay inside the project's docs/ and shell commands stay read-only. No code/configuration writes, "
-               "execution/dispatch scripts, sub-agents, commits, external publishing/writes or sensitive-data transmission. "
-               "Document scripts, including lessons.py, are allowed; rule publication still requires Human approval. "
-               "Report changes needed elsewhere instead of making them."),
-}
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[2]
@@ -130,23 +114,6 @@ def orchestrating(state, session=None):
 def working(state, session=None):
     """True for a Work run, whose Codex launch the guard keeps from starting sub-agents."""
     return (state.get("role") or (session or {}).get("role")) == "work"
-
-
-def work_profile(state, session=None):
-    """The explore or scribe profile of a Work run, which the guard confines; None for every other run."""
-    profile = state.get("workProfile")
-    return profile if working(state, session) and profile in PROFILES else None
-
-
-def scribe_root(session):
-    """The only directory a Scribe may write: the working directory's docs/, or the whole working
-    directory when it is an isolated Work Unit of the documents repository itself."""
-    working_directory = Path(session.get("workingDirectory") or session["projectRoot"])
-    if (working_directory / "docs").is_dir():
-        return os.path.realpath(working_directory / "docs")
-    if session.get("workingDirectory") and os.path.realpath(working_directory) != os.path.realpath(session["projectRoot"]):
-        return os.path.realpath(working_directory)
-    raise ValueError(f"Scribe has no docs/ directory to write in {working_directory}")
 
 
 def document_paths(values):
@@ -174,51 +141,6 @@ def document_paths(values):
     return result
 
 
-def explorer_paths(state, session):
-    if state.get("roleBoundaryPolicy") != 1:
-        return []
-    binding = state.get("taskBinding") or {}
-    # Existing structured file operations take precedence over the optional brief binding.
-    operations = binding.get("requiredFileOperations")
-    values = ([item["path"] for item in operations if item.get("operation") in {"add", "modify"}]
-              if operations is not None else binding.get("documentPaths", []))
-    root = Path(session.get("workingDirectory") or session["projectRoot"])
-    result = []
-    for value in document_paths(values):
-        target = root / value
-        if not inside(target, root / "docs", root) or has_symlink(target):
-            raise ValueError("Assigned document escapes docs/ or traverses a symlink")
-        if authorized_write(target, state, session):
-            result.append(str(target))
-    return result
-
-
-def ensure_document_owner(paths, state):
-    """Reuse accepted run/task bindings to reject another active writer of an exact file."""
-    agents = state.get("runtimeBinding", {}).get("agentsRoot")
-    if not paths or not agents:
-        return
-    for filename in Path(agents).glob("*/runs/*/state.json"):
-        if str(filename) == state.get("statePath"):
-            continue
-        if has_symlink(filename):
-            raise ValueError("Unsafe Document owner state")
-        other = json.loads(filename.read_text(encoding="utf-8"))
-        if other.get("status") not in {"accepted", "queued", "starting", "running", "cancelling"} or other.get("role") != "work":
-            continue
-        binding = other.get("taskBinding") or {}
-        operations = binding.get("requiredFileOperations")
-        values = ([item["path"] for item in operations] if operations is not None else binding.get("documentPaths", []))
-        root = other.get("workingDirectory") or other.get("runtimeBinding", {}).get("projectRoot")
-        if not root:
-            continue
-        owned = {os.path.realpath(Path(root) / value) for value in values}
-        if owned.intersection(os.path.realpath(path) for path in paths):
-            raise ValueError("Assigned Document already has an active task owner; serialize or reassign it")
-        if other.get("workProfile") == "scribe" and not values and any(inside(path, Path(root) / "docs", None) for path in paths):
-            raise ValueError("An active Scribe has no exact file binding; finish its shared Document work before assigning this file")
-
-
 def has_symlink(path):
     path = Path(os.path.abspath(path))
     return any(part.is_symlink() for part in (path, *path.parents))
@@ -239,23 +161,6 @@ def writable(path, config, cwd):
     if config.get("writeRoot") and inside(candidate, config["writeRoot"], cwd):
         return True
     return str(candidate.absolute()) in config.get("writePaths", []) and ".." not in candidate.parts
-
-
-def profile_environment(state, session):
-    """Provider-process variables that arm the guard for this explore or scribe Work run."""
-    profile = work_profile(state, session)
-    assigned = explorer_paths(state, session) if profile == "explore" else []
-    ensure_document_owner(assigned, state)
-    return {ENV: json.dumps({"role": "work", "profile": profile, "pluginRoots": plugin_roots(),
-                             "scripts": list(PROFILE_SCRIPTS[profile]),
-                             "captureStatePath": state.get("statePath"),
-                             "canRecord": (state.get("executionPolicy") or session.get("executionPolicy") or {}).get("sandboxPolicy", {}).get("type") != "read-only",
-                             "projectRoot": session["projectRoot"],
-                             "documentsRoot": session.get("workingDirectory") or session["projectRoot"],
-                             "lessonMetadataRoot": str(Path(state["runtimeBinding"]["runtimeRoot"]) / "lessons-learned") if state.get("runtimeBinding", {}).get("runtimeRoot") else None,
-                             "runSource": str(Path(state["statePath"]).parent) if state.get("statePath") and state.get("roleBoundaryPolicy") == 1 else None,
-                             "writePaths": assigned,
-                             "writeRoot": (scribe_root(session) if authorized_write(scribe_root(session), state, session) else None) if profile == "scribe" else str(Path(state["statePath"]).parent) if state.get("statePath") and state.get("roleBoundaryPolicy") == 1 else None}, sort_keys=True)}
 
 
 def plugin_roots():
@@ -294,10 +199,9 @@ def inside(path, root, cwd):
 
 
 def plugin_script(path, config, cwd):
-    """A `scripts/*.py` file directly inside one of the plugin roots fixed when the run was armed,
-    limited to the profile's Document scripts when the arming lists them."""
+    """A `scripts/*.py` file directly inside one of the plugin roots fixed when the run was armed."""
     candidate = Path(os.path.realpath(Path(cwd or ".") / path))
-    return (candidate.suffix == ".py" and candidate.name in config.get("scripts", (candidate.name,))
+    return (candidate.suffix == ".py"
             and any(candidate.parent == Path(os.path.realpath(root)) / "scripts" for root in config["pluginRoots"]))
 
 
@@ -353,54 +257,6 @@ def lesson_query(arguments, config=None):
                 and isinstance(occurrences, list) and bool(occurrences)
                 and all(item.get("source") == config["runSource"] for item in occurrences))
     except (OSError, ValueError, TypeError):
-        return False
-
-
-def migration_command(arguments, config):
-    """Only contract moves with captured roots and an own-run data backup, never storage migration.
-
-    The CLI checks the selected CSV endpoints again before any write; the hook cannot bind mutable
-    file contents. Keep this argument check shared with the CLI so abbreviations cannot bypass it.
-    """
-    if config.get("profile") != "scribe":
-        return False
-    if arguments in (["--help"], ["-h"]):
-        return True
-    parsed = options(arguments, "", "", {"--project-root": True, "--documents-root": True,
-                      "--operations": True, "--task-id": True, "--backup-dir": True,
-                      "--backup": False, "--apply": False})
-    if parsed is None or parsed[1]:
-        return False
-    pairs = parsed[0]
-    values = dict(pairs)
-    if len(values) != len(pairs) or "--backup" in values and "--apply" in values:
-        return False
-    if (values.get("--project-root") != config.get("projectRoot")
-            or values.get("--documents-root", values.get("--project-root")) != config.get("documentsRoot")):
-        return False
-    for option in ("--project-root", "--documents-root", "--operations", "--backup-dir"):
-        if option in values:
-            path = Path(values[option])
-            if not path.is_absolute() or ".." in path.parts or has_symlink(path):
-                return False
-    operations = values.get("--operations")
-    run = config.get("runSource") or (str(Path(config["captureStatePath"]).parent)
-                                     if config.get("captureStatePath") else None)
-    try:
-        docs = scribe_root({"projectRoot": config["projectRoot"], "workingDirectory": config["documentsRoot"]})
-        if not operations or not Path(operations).is_file() or not (
-                inside(operations, docs, None) or run and inside(operations, run, None)):
-            return False
-        backup = values.get("--backup-dir")
-        if backup:
-            data = Path(run) / "document-backups" if run else None
-            if (not data or has_symlink(data) or Path(backup) == data
-                    or not inside(backup, data, None) or inside(backup, config["documentsRoot"], None)):
-                return False
-        if "--backup" in values or "--apply" in values:
-            return bool(backup and config.get("writeRoot") == docs)
-        return True
-    except (OSError, ValueError, KeyError, TypeError):
         return False
 
 
@@ -627,14 +483,7 @@ def allowed_segment(words, config, cwd, alone):
             return (alone and ((script == "exec.py" and arguments[1:2] == ["status"])
                               or (script == "lessons.py" and lesson_query(arguments[1:], config))))
         # Only a whole command, so no pipe can feed a script's output onward.
-        if arguments and Path(arguments[0]).name == "migrate_document_paths.py" and config.get("profile"):
-            # Older installed copies lack the CLI's execution-time scope checks.
-            return (alone and Path(arguments[0]).is_absolute()
-                    and Path(arguments[0]) == PLUGIN_ROOT / "scripts/migrate_document_paths.py"
-                    and plugin_script(arguments[0], config, cwd) and migration_command(arguments[1:], config))
-        return (alone and bool(arguments) and plugin_script(arguments[0], config, cwd)
-                and (config.get("profile") != "explore" or Path(arguments[0]).name != "lessons.py"
-                     or lesson_query(arguments[1:], config)))
+        return alone and bool(arguments) and plugin_script(arguments[0], config, cwd)
     if name in ("bash", "sh", "zsh") and len(arguments) == 2 and arguments[0] in ("-c", "-lc"):
         return allowed_command(arguments[1], config, cwd, alone)
     if name == "git":
@@ -695,11 +544,7 @@ def codex_decision(event, config):
         path = arguments.get("file_path")
         return isinstance(path, str) and writable(path, config, cwd)
     if tool == "apply_patch":
-        patch = arguments.get("command", "")
-        if config.get("profile") == "explore" and any(
-                line.startswith(("*** Delete File:", "*** Move to:")) for line in str(patch).splitlines()):
-            return False
-        paths = list(patch_paths(patch))
+        paths = list(patch_paths(arguments.get("command", "")))
         return bool(paths) and all(writable(path, config, cwd) for path in paths)
     return True
 
@@ -713,7 +558,7 @@ def agy_decision(event, config):
     call = event.get("toolCall") or {}
     tool, arguments = call.get("name"), call.get("args") or {}
     cwd = arguments.get("Cwd") or next(iter(event.get("workspacePaths") or []), None)
-    if tool in AGY_READS or tool in AGY_WEB and not config.get("profile"):
+    if tool in AGY_READS or tool in AGY_WEB:
         return True
     if tool == "run_command":
         return allowed_command(str(arguments.get("CommandLine", "")), config, cwd)
@@ -721,14 +566,6 @@ def agy_decision(event, config):
         paths = [arguments[key] for key in PATH_ARGUMENTS if isinstance(arguments.get(key), str)]
         return bool(paths) and all(writable(path, config, cwd) for path in paths)
     return False
-
-
-def profile_decision(event, config, agy):
-    """Explorer and Scribe: Main's read and shell rules with the profile's write root, never a sub-agent."""
-    if agy:
-        tool = (event.get("toolCall") or {}).get("name")
-        return config["profile"] in PROFILES if tool in AGY_WEB else agy_decision(event, config)
-    return work_decision(event) and codex_decision(event, config)
 
 
 def denial_detail(event, config, reason):
@@ -746,8 +583,6 @@ def denial_detail(event, config, reason):
             return "guard_command_format", "Shell expansion or unsupported quoting is not allowed. Use literal absolute paths instead of $PWD/$HOME, substitutions or backticks. Correct the command format and retry within the same authorized scope."
         if any(unquoted is None and word != "|" for word, unquoted in words):
             return "guard_command_format", "Shell lists, redirects and heredocs are not allowed. Use a single command and --input-json instead of stdin redirection; correct the format without widening permissions."
-        if config.get("profile") == "explore" and any(Path(word).name == "lessons.py" for word, _ in words):
-            return "guard_lesson_action", "Explorer permits retrieve/audit and current-run record/own-record resolve with bound project/documents roots and source, never rule publication. Use exactly one --input or --input-json."
     return "guard_profile_scope", reason
 
 
@@ -755,7 +590,7 @@ def capture_denial(event, config, code):
     """Persist a redacted pending occurrence even when a provider omits hook failures from events.
 
     The runtime supplies this path, never tool input. The hook writes only runtime storage;
-    the run owner later replays it into Documents if its profile allows writes.
+    the run owner later replays it into Documents when its run can write.
     """
     if not isinstance(config, dict) or not config.get("captureStatePath"):
         return
@@ -778,36 +613,6 @@ def capture_denial(event, config, code):
     lessons.observe(path.parent, pending_state, failure, state.get("attempt", 0))
 
 
-def profile_instruction(state, project_root, working_directory):
-    if state.get("workProfile") not in PROFILES:
-        return ""
-    command = "python3 " + shlex.quote(str(PLUGIN_ROOT / "scripts/lessons.py"))
-    command += " retrieve --project-root " + shlex.quote(str(project_root))
-    command += " --documents-root " + shlex.quote(str(working_directory))
-    command += " --input-json " + shlex.quote(json.dumps({"query": "<topic>", "scope": "<scope>"}))
-    legacy = state.get("workProfile") == "explore" and state.get("roleBoundaryPolicy") != 1
-    explorer = ("Historical Explorer authority is project read-only: retrieve/audit lessons and report pending records; do not write Documents. "
-                if legacy else "Explorer may retrieve/audit, record one bundled error/judgment lesson after its work and resolve its own, with source equal to this run directory, using bound roots. Rule publication stays forbidden. ")
-    assigned = (state.get("taskBinding") or {}).get("requiredFileOperations")
-    paths = ([item["path"] for item in assigned if item.get("operation") in {"add", "modify"}]
-             if assigned is not None else (state.get("taskBinding") or {}).get("documentPaths", []))
-    return ("\nRestricted Work command contract: use one plain shell command per call, with literal paths. "
-            "No multiline command lists, heredocs, redirection, variable expansion ($PWD/$HOME) or substitutions. "
-            "Read/query example (replace topic and scope): " + command + ". "
-            "Use the same --input-json form for audit with an occurrenceIds array. "
-            + explorer + "Captured task Document paths: " + json.dumps(paths, ensure_ascii=False) + ". "
-            "Explorer writes only these exact paths and own run files under the captured new policy. Missing assignment grants no project writes. Report pending records in the result/receipt. "
-            "Scribe may use the Document CLIs, including lessons.py, and write inside docs/. "
-            "For authorized file moves use " + str(PLUGIN_ROOT / "scripts/migrate_document_paths.py")
-            + " with --operations <CSV>, --project-root and --documents-root set to the captured roots. "
-            "Preview returns source/expected-destination SHA-256; run --backup then --apply with the same "
-            "--backup-dir <own-run>/document-backups/<name>. CSV endpoints must stay inside docs/. "
-            "This does not authorize a move, new directories or draft adoption; storage-layout migration is unavailable to Scribe. "
-            "A guard_command_format rejection is correctable: use the permitted equivalent command and continue. "
-            "Never retry an unchanged rejected call, broaden authority or classify a syntax restriction as missing credentials. "
-            "Actual forbidden operations remain forbidden; preserve and report a genuinely blocking prerequisite.\n")
-
-
 def main():
     event = json.load(sys.stdin)
     agy = "toolCall" in event
@@ -819,9 +624,7 @@ def main():
     else:
         try:
             config = json.loads(raw)
-            if config.get("role") == "work" and config.get("profile"):
-                allowed, reason = profile_decision(event, config, agy), PROFILE_REASONS[config["profile"]]
-            elif config.get("role") == "work":
+            if config.get("role") == "work":
                 allowed, reason = work_decision(event), WORK_REASON
             else:
                 allowed = agy_decision(event, config) if agy else codex_decision(event, config)

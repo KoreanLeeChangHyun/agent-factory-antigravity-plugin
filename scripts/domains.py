@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Project work-area domains and worker memberships shared by the Human (control center) and Main.
+"""Project work-area domains, worker memberships and conductor session labels shared by the Human (control center)
+and Main.
 
-Every worker belongs to a real named domain; there is no unclassified state or placeholder domain.
+Every worker belongs to a real named domain; there is no unclassified state or placeholder domain. Every project has
+one common domain for cross-cutting work; it cannot be deleted or merged away.
 """
 from __future__ import annotations
 
@@ -36,9 +38,16 @@ def build_parser():
     rename = command("rename", "Rename a domain; former names stay linked to recorded tasks")
     rename.add_argument("--domain-id", required=True)
     rename.add_argument("--name", required=True)
-    capacity = command("capacity", "Human only: set the maximum operating sessions; keep active work and all history")
-    capacity.add_argument("--domain-id", required=True)
-    capacity.add_argument("--max-sessions", type=int, required=True)
+    accept = command("accept", "Human only: accept a domain Main proposed")
+    accept.add_argument("--domain-id", required=True)
+    archive = command("archive", "Human only: archive a domain; its workers and records stay, new placements are refused")
+    archive.add_argument("--domain-id", required=True)
+    archive.add_argument("--restore", action="store_true", help="Restore an archived domain")
+    merge = command("merge", "Human only: move a domain's workers into another and keep its names as former names")
+    merge.add_argument("--domain-id", required=True)
+    merge.add_argument("--target-id", required=True)
+    delete = command("delete", "Human only: delete a domain that holds no worker")
+    delete.add_argument("--domain-id", required=True)
     assign = command("assign", "Place a worker in a real domain; ai cannot move a worker the Human placed")
     assign.add_argument("--agent", required=True)
     assign.add_argument("--domain-id", required=True)
@@ -47,6 +56,14 @@ def build_parser():
     link = command("link", "Main: reuse or create the named domain and place the worker unless the Human placed it")
     link.add_argument("--agent", required=True)
     link.add_argument("--name", required=True)
+    sessions = command("conductors", "Read one chat's conductor (Main) sessions and the domain label of each", writes=False)
+    sessions.add_argument("--agent", required=True, help="Any Main session of the chat, such as your own agent ID")
+    label = command("label-conductor", "Label a conductor (Main) session with a domain; ai cannot change a label the Human set")
+    label.add_argument("--agent", required=True, help="The Main session to label, from conductors")
+    target = label.add_mutually_exclusive_group(required=True)
+    target.add_argument("--domain-id", help="A listed domain")
+    target.add_argument("--name", help="A domain name: an existing domain is reused, otherwise it is created")
+    target.add_argument("--clear", action="store_true", help="Remove the session's label")
     recover = command("recover", "Place workers without any entry in the one domain their own runs recorded; list the rest as unresolved")
     recover.add_argument("--dry-run", action="store_true", help="Report what would be recovered without writing")
     return parser
@@ -74,12 +91,23 @@ def main(argv=None):
             result = domains.create(root, args.name, args.actor, args.source, args.expected_revision)
         elif args.command == "rename":
             result = domains.rename(root, args.domain_id, args.name, args.actor, args.source, args.expected_revision)
-        elif args.command == "capacity":
-            result = domains.set_capacity(root, args.domain_id, args.max_sessions, args.actor, args.source, args.expected_revision)
+        elif args.command == "accept":
+            result = domains.accept(root, args.domain_id, args.actor, args.source, args.expected_revision)
+        elif args.command == "archive":
+            result = domains.archive(root, args.domain_id, args.actor, args.source, args.expected_revision, args.restore)
+        elif args.command == "merge":
+            result = domains.merge(root, args.domain_id, args.target_id, args.actor, args.source, args.expected_revision)
+        elif args.command == "delete":
+            result = domains.delete(root, args.domain_id, args.actor, args.source, args.expected_revision)
         elif args.command == "assign":
             result = domains.assign(root, args.agent, args.domain_id, args.actor, args.source, args.expected_revision)
         elif args.command == "remove-worker":
             result = domains.remove_worker(root, args.agent, args.actor, args.source, args.expected_revision)
+        elif args.command == "conductors":
+            result = domains.conductors(root, args.agent)
+        elif args.command == "label-conductor":
+            result = domains.label_conductor(root, args.agent, args.actor, args.source, args.domain_id, args.name,
+                                             args.clear, args.expected_revision)
         elif args.command == "recover":
             result = domains.recover(root, args.actor, args.source, args.expected_revision, args.dry_run)
         else:
@@ -87,8 +115,6 @@ def main(argv=None):
                 raise ContractError("domain_actor_invalid", "link is Main's dispatch path; the Human uses assign")
             result = domains.link_dispatch(root, args.agent, args.name, args.source)
             result["domains"] = domains.read(root)
-        from conductor.session_pool import public_document
-        result["domains"] = public_document(root, result["domains"])
         emit({"schemaVersion": 1, "kind": "project-domains-result", "command": args.command, **result}, sys.stdout)
         return 0
     except (ContractError, OSError, ValueError) as error:

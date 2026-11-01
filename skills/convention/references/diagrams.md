@@ -4,19 +4,22 @@
 
 ## 1. Document assets
 
-- Refined and Specification (Skill document) packages store each diagram or structured system
-  architecture, database/ERD or API design model as a separate JSON file under
-  `assets/`. At the relevant location, `SKILL.md` uses a descriptive relative Markdown
+- Store every diagram or structured system architecture, database/ERD or API design model
+  once in `docs/artifact/diagram/`; JSON models use a separate JSON file under that directory.
+  Refined and Specification (Skill document) packages reference the original instead of copying it
+  into the package. At the relevant location, `SKILL.md` uses a descriptive relative Markdown
   link to that file; it does not embed the JSON object or a fenced JSON copy. Follow
-  [Documents](../../document/references/format.md#document-package) for the single-source package.
-- Use stable, descriptive kebab-case filenames. Archify assets end in `.architecture.json`
-  or `.sequence.json` (for example `system.architecture.json`) so the Document viewer and the
-  diagram editor render them; other models keep names such as `database-erd.json` and `api-design.json`. Keep critical meaning in nearby readable
+  [Documents](../../document/references/format.md#document-package) for document references and
+  [Artifacts](artifacts.md) for the flat source directory.
+- Use stable, descriptive kebab-case filenames. Renderable originals end in `.architecture.json`,
+  `.sequence.json`, `.erd.json` or `.archify.json` so the Document viewer and diagram editor
+  recognize them; other models keep descriptive names such as `api-design.json`. Keep critical meaning in nearby readable
   text; the linked JSON carries the structured representation.
 - Use an available, documented Archify schema; do not invent one or claim rendering
   support without an available renderer.
 - Read `archify.md` for architecture and sequence assets: the pinned official validator
-  and standalone [HTML delivery](archify.md). ERD has no Archify renderer in this integration.
+  and standalone [HTML delivery](archify.md).
+- Read `erd.md` for the bundled ERD JSON schema, validation and rendering in both views.
 - Preserve existing diagrams when no supported conversion is available.
 - Apply [section-final visual placement](prompting.md#section-table-order).
 
@@ -36,7 +39,7 @@
 - Include only relevant attributes unless a complete physical schema is required. Never
   infer tables, keys or constraints from naming alone.
 - Preserve derivation provenance; schemas, migrations and accepted Specifications remain
-  authoritative over the diagram. These semantics do not claim ERD rendering support.
+  authoritative over the diagram. Renderer format and supported views follow [ERD](erd.md).
 
 <a id="behavior--game-decisions"></a>
 

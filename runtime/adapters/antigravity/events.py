@@ -9,6 +9,14 @@ from adapters.tool_arguments import tool_item
 from execution.streaming import DeltaBuffer, JsonStringField
 from execution.interview import extract_markers
 
+
+class ProviderFailure(ValueError):
+    """An Antigravity-side failure (model selection, server load, API error), not an invalid Agent answer."""
+
+    def __init__(self, message, code="native_backend_error"):
+        super().__init__(message)
+        self.code = code
+
 # agy tools that change files, and the parameter naming the changed path.
 FILE_TOOLS = {"write_to_file": "TargetFile", "replace_file_content": "TargetFile",
               "multi_replace_file_content": "TargetFile", "sed_file": "TargetFile", "notebook_edit": "NotebookPath"}
@@ -86,7 +94,7 @@ class Events:
                     {"type": "provider.model", "provider": "antigravity", "model": model}]
         if not self.started:
             if kind == "result":
-                raise ValueError("Antigravity failed before initialization: " + str((event.get("result") or {}).get("error")))
+                raise ProviderFailure("Antigravity failed before initialization: " + str((event.get("result") or {}).get("error")))
             return []
         if kind == "step_update":
             step = event.get("step_update")
@@ -187,7 +195,7 @@ class Events:
         if result.get("conversation_id") != self.session:
             raise ValueError("Antigravity terminal conversation does not match initialization")
         if result.get("status") != "SUCCESS":
-            raise ValueError("Antigravity execution failed: " + str(result.get("error") or result.get("status")))
+            raise ProviderFailure("Antigravity execution failed: " + str(result.get("error") or result.get("status")))
         kind = self.turns.pop(0) if len(self.turns) > 1 else None
         if kind is not None:
             return self.intermediate(kind, result)

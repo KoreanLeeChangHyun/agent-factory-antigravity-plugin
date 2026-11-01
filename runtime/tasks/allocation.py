@@ -65,7 +65,7 @@ def validate(tasks):
         if not text(value['unitReason']) or not text(value['writeScopeReason']):
             fail('Explain the independent outcome and the existing write boundary')
         exact(value['profile'], {'id', 'reason'})
-        if not isinstance(value['profile']['id'], str) or value['profile']['id'] not in {'explore', 'workLight', 'work', 'scribe', 'verification'} or not text(value['profile']['reason']):
+        if not isinstance(value['profile']['id'], str) or value['profile']['id'] not in {'explore', 'workLight', 'work', 'scribe', 'designer', 'verification'} or not text(value['profile']['reason']):
             fail('Record a supported profile and selection reason; this selects no model')
         exact(value['session'], {'strategy', 'reason'})
         if not isinstance(value['session']['strategy'], str) or value['session']['strategy'] not in {'new', 'reuse'} or not text(value['session']['reason']):

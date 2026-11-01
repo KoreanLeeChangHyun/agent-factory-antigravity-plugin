@@ -5,6 +5,7 @@ import json
 
 from storage.errors import ContractError
 from conductor import domains, pool
+from tasks.modes import check_designer_model
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS area_role_settings(area_id TEXT NOT NULL, role TEXT NOT NULL, settings TEXT NOT NULL,
@@ -50,13 +51,11 @@ class Roles:
 
     def adopt_native(self, c, area, profile, signature, settings):
         from storage.files import safe_read_json
-        placements = domains.read(self.store.path.parent)
         for worker in self.native():
             agent = worker['agentId']
             if worker.get('removed') or worker.get('availability') != 'idle' or self.native_profile(worker) != profile:
                 continue
-            child = placements.get('subdomainAssignments', {}).get(agent) or {}
-            if (worker.get('domain') or {}).get('domainId') != area['domainId'] or child.get('subdomainId') != area['subdomainId']:
+            if (worker.get('domain') or {}).get('domainId') != area['domainId']:
                 continue
             if self.store.row(c, 'SELECT id FROM pool_members WHERE id=?', agent) or pool.session_busy(self.store.path.parent, agent):
                 continue
@@ -72,8 +71,8 @@ class Roles:
 
     def area_id(self, value):
         catalog = self.store.pool.catalog()
-        if value not in {a['id'] for a in catalog['domains'] + catalog['subdomains']}:
-            raise ContractError('area_required', 'Select a registered domain or subdomain')
+        if value not in {a['id'] for a in catalog['domains']}:
+            raise ContractError('area_required', 'Select a registered domain')
         return value
 
     def configure(self, c, area_id, reference, *, route=None, profile=None, settings=None):
@@ -86,17 +85,18 @@ class Roles:
             c.execute('INSERT OR REPLACE INTO area_processing VALUES(?,?,?)', (area_id, route, reference))
         if profile is not None:
             # resolver is a separately selected tier above Expert; it is configured, never hired into a pool.
-            if profile not in (*PROFILES, 'explore', 'scribe', 'resolver') or not isinstance(settings, dict) or not settings.get('model') or settings.get('provider') not in ('codex', 'claude', 'antigravity'):
+            if profile not in (*PROFILES, 'explore', 'scribe', 'designer', 'resolver') or not isinstance(settings, dict) or not settings.get('model') or settings.get('provider') not in ('codex', 'claude', 'antigravity'):
                 raise ContractError('role_setting_invalid', 'Use an explicit existing role model/provider setting')
+            if profile == 'designer':
+                check_designer_model(settings['model'])
             if settings.get('sandbox') not in ('read-only', 'workspace-write', 'danger-full-access') or settings.get('approvalPolicy') not in ('bypass', 'required'):
                 raise ContractError('role_setting_invalid', 'Capture the role permissions without substituting a model')
             c.execute('INSERT OR REPLACE INTO area_role_settings VALUES(?,?,?,?)', (area_id, profile, json.dumps(settings), reference))
 
     def processing(self, c, area):
-        for aid in (area.get('subdomainId'), area.get('domainId')):
-            row = c.execute('SELECT * FROM area_processing WHERE area_id=?', (aid,)).fetchone()
-            if row:
-                return {'route': row['route'], 'source': row['source'], 'inheritedFrom': aid}
+        row = c.execute('SELECT * FROM area_processing WHERE area_id=?', (area.get('domainId'),)).fetchone()
+        if row:
+            return {'route': row['route'], 'source': row['source'], 'inheritedFrom': area['domainId']}
         return {'route': 'work', 'source': 'existing-work-default', 'inheritedFrom': None}
 
     def capture(self, c, request_id, area, choice=None, source=None, *, profile="work"):
@@ -105,7 +105,7 @@ class Roles:
             if choice not in ROUTES or not source:
                 raise ContractError('route_invalid', 'New-request route choice needs its exact Human input')
             route = {'route': choice, 'source': source, 'inheritedFrom': None}
-        if profile not in ('work', 'workLight', 'explore', 'scribe'):
+        if profile not in ('work', 'workLight', 'explore', 'scribe', 'designer'):
             raise ContractError('role_profile_invalid', 'Select an existing Work profile')
         route['workProfile'] = profile
         req = self.store.row(c, 'SELECT chat_id FROM requests WHERE id=?', request_id)
@@ -121,10 +121,9 @@ class Roles:
         return route
 
     def settings(self, c, area, profile, policy):
-        for aid in (area.get('subdomainId'), area.get('domainId')):
-            row = c.execute('SELECT settings FROM area_role_settings WHERE area_id=? AND role=?', (aid, profile)).fetchone()
-            if row:
-                return json.loads(row['settings'])
+        row = c.execute('SELECT settings FROM area_role_settings WHERE area_id=? AND role=?', (area.get('domainId'), profile)).fetchone()
+        if row:
+            return json.loads(row['settings'])
         raw = (policy.get('roleSettings') or {}).get(profile) or (policy.get('work') if profile == (policy.get('work') or {}).get('workProfile', 'work') else None)
         if not raw or not raw.get('model'):
             raise ContractError('role_settings_required', 'Configure the selected role using its existing captured settings')
@@ -134,7 +133,7 @@ class Roles:
         captured = c.execute('SELECT * FROM request_processing WHERE request_id=?', (req['id'],)).fetchone()
         route = captured['route'] if captured else 'work'
         profile = spec.get('workProfile', json.loads(captured['source']).get('workProfile', 'work') if captured else (policy.get('work') or {}).get('workProfile', 'work'))
-        if profile not in ('work', 'workLight', 'explore', 'scribe'):
+        if profile not in ('work', 'workLight', 'explore', 'scribe', 'designer'):
             raise ContractError('role_profile_invalid', 'Preserve the selected Work profile')
         if 'taskMode' in spec and spec['taskMode'] != route:
             raise ContractError('route_immutable', 'The request processing choice is fixed at acceptance')
@@ -164,7 +163,7 @@ class Roles:
         if profile not in PROFILES:
             raise ContractError('role_profile_invalid', 'Select Worker, Expert or Verifier')
         if actor == 'human':
-            self.configure(c, area['subdomainId'], reference, profile=profile, settings=settings)
+            self.configure(c, area['domainId'], reference, profile=profile, settings=settings)
         role, signature = self.pool_role(profile), self.signature(settings, profile)
         existing = self.store.pool.idle(c, role, area, signature) or self.adopt_native(c, area, profile, signature, settings)
         if existing:
@@ -173,7 +172,7 @@ class Roles:
         if reason:
             raise ContractError('employment_limit', reason)
         agent = ident('verify-cq' if profile == 'verification' else 'work-cq')
-        domains.assign_subdomain(self.store.path.parent, agent, area['domainId'], area['subdomainId'], actor, reference)
+        domains.assign(self.store.path.parent, agent, area['domainId'], actor, reference)
         self.store.pool.member(c, agent, role, area, signature, 'idle')
         c.execute('INSERT INTO role_member_settings VALUES(?,?,?,?)', (agent, profile, json.dumps(settings), reference))
         return {'agentId': agent, 'profile': profile, 'reused': False, 'nativeSession': 'created-on-first-assignment'}
@@ -226,7 +225,6 @@ class Roles:
             members.append({'poolState': row['state'], 'id': row['id'], 'profile': settings['profile'] if settings else ('work' if row['role']=='worker' else row['role']),
                             'area': json.loads(row['area']), 'state': availability, 'taskIds': tasks,
                             'settings': json.loads(settings['settings']) if settings else None})
-        placements = domains.read(self.store.path.parent)
         pooled = {m['id'] for m in members}
         for worker in self.native():
             if worker['agentId'] in pooled or worker.get('removed') or not worker.get('domain'):
@@ -234,23 +232,18 @@ class Roles:
             profile = self.native_profile(worker)
             if profile is None:
                 continue
-            child = placements.get('subdomainAssignments', {}).get(worker['agentId']) or {}
             availability = worker['availability']
             latest = worker.get('latestRun') or {}
             state = 'running' if latest.get('status') in ('running','starting') else 'idle' if availability == 'idle' else 'occupied-externally'
             members.append({'id': worker['agentId'], 'profile': profile, 'source': 'team-roster', 'observedAt': self.native_cache[0],
-                            'area': {'domainId': worker['domain']['domainId'], 'subdomainId': child.get('subdomainId')}, 'state': state,
+                            'area': {'domainId': worker['domain']['domainId']}, 'state': state,
                             'taskIds': [t['taskId'] for t in worker.get('currentTasks', [])],
-                            'settings': {k: worker.get(k) for k in ('model','provider','reasoningEffort','fast','sandbox','humanApprovalPolicy')},
-                            'reuseRequiresArea': not bool(child.get('subdomainId'))})
+                            'settings': {k: worker.get(k) for k in ('model','provider','reasoningEffort','fast','sandbox','humanApprovalPolicy')}})
         areas = []
         for d in catalog['domains']:
-            children = [s for s in catalog['subdomains'] if s['domainId']==d['id']]
-            for a in [d, *children]:
-                selected = [m for m in members if m['area']['domainId']==a['id'] or m['area']['subdomainId']==a['id']]
-                area = {'domainId': a.get('domainId',a['id']), 'subdomainId': a['id'] if 'domainId' in a else None}
-                areas.append({**a, 'processing': self.processing(c, area), 'members': selected,
-                              'counts': {p: {'hired': sum(m['profile']==p and m['state']!='retired' for m in selected), 'active': sum(m['profile']==p and m['state'] in ('running','verifying') for m in selected), 'idle': sum(m['profile']==p and m['state']=='idle' for m in selected), 'waiting': sum(m['profile']==p and m['state'] in ('reserved','waiting-result','occupied-externally') for m in selected)} for p in PROFILES}})
+            selected = [m for m in members if m['area']['domainId']==d['id']]
+            areas.append({**d, 'processing': self.processing(c, {'domainId': d['id']}), 'members': selected,
+                          'counts': {p: {'hired': sum(m['profile']==p and m['state']!='retired' for m in selected), 'active': sum(m['profile']==p and m['state'] in ('running','verifying') for m in selected), 'idle': sum(m['profile']==p and m['state']=='idle' for m in selected), 'waiting': sum(m['profile']==p and m['state'] in ('reserved','waiting-result','occupied-externally') for m in selected)} for p in PROFILES}})
         return {'nativeProblems': self.native_cache[1].get('problems', []) if self.native_cache else [], 'nativeObservation': {'at': self.native_cache[0], 'consistency': 'sequential-observations'} if self.native_cache else None,
                 'responsibilities': [self.store.responsibility.view(c, r['id']) for r in c.execute('SELECT id FROM requests')], 'chats': [{'id': r['id'], 'policy': json.loads(r['policy'])} for r in c.execute('SELECT * FROM chats ORDER BY created_at')], 'catalog': catalog, 'areas': areas, 'tasks': [self.task(c, dict(d)) for d in c.execute('SELECT * FROM delegations ORDER BY created_at')]}
 

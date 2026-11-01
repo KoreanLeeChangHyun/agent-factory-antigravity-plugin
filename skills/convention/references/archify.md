@@ -2,9 +2,10 @@
 
 ## 1. Renderer and source
 
-- Use `python3 <plugin-root>/scripts/archify.py` for architecture and sequence JSON assets.
+- Use `python3 <plugin-root>/scripts/archify.py` for architecture, sequence and ERD JSON originals.
 - This boundary supports `architecture` and `sequence`. Official Archify also defines
-  workflow, dataflow and lifecycle; they are outside this minimal integration. ERD is unsupported.
+  workflow, dataflow and lifecycle; they are outside this minimal integration.
+  ERD uses the separate bundled [Agent Factory ERD schema and renderer](erd.md), not official Archify.
 - The renderer is [tt-a1i/archify v3.0.1](https://github.com/tt-a1i/archify/tree/2ab3cae7ac2c2a55d7386ca789d03c4fcd31816c),
   pinned to commit `2ab3cae7ac2c2a55d7386ca789d03c4fcd31816c` in
   `<plugin-root>/runtime/system/archify-lock.json`. It is MIT licensed and requires Node.js >=18.
@@ -23,21 +24,33 @@
 ### 2.1. Extension editor
 
 - With the matching Agent Factory extension, `*.archify.json`, `*.architecture.json`
-  and `*.sequence.json` open directly as a validated diagram. Ordinary `*.json` files
+  `*.sequence.json` and `*.erd.json` open directly as a validated diagram. Ordinary `*.json` files
   remain text. The supported `diagram_type` in the content selects the renderer.
 - The editor's source button opens the original JSON beside the view; saving refreshes
   it. Errors preserve source access. The first preview prepares the pinned renderer
   automatically in system temp, using the matching plugin and Python/Node on the workspace
   host. It creates no project output. A trusted workspace and network access for initial
   preparation are required; no standalone desktop browser is needed for the editor.
-- The editor receives SVG/CSS from `preview --tool-dir <tool-dir>` via stdin JSON.
-  It isolates the SVG in a data image and runs only extension-local UI scripts. The
-  standalone HTML's scripts are not injected into chat or the file editor.
+- For architecture/sequence, the editor shows the pinned official interactive viewer from `preview --viewer --tool-dir <tool-dir>`
+  (stdin JSON): zoom (`+`/`-`/`0` and buttons, 100–300%, no wheel zoom), drag pan, reading depth,
+  node focus, reachability, relations, route, lens, finder, guide (`?`), theme, style and export.
+  Its scripts run only under the editor's per-load nonce and the exact v3.0.1 script layout;
+  network access stays blocked. Source and refresh buttons join the viewer toolbar.
+- Each architecture/sequence file's zoom, centre and selection (the viewer's URL fragment) persist in workspace
+  state and return on reopen, save refresh and theme change. VS Code's theme selects the
+  viewer theme. Exports from `docs/artifact/diagram/` default to the matching artifact domain
+  (SVG/PNG in `media`, PDF in `output`, HTML in `interactive`); other locations default beside
+  the JSON. The save dialog preserves an explicitly chosen destination. Image clipboard copy and alerts
+  depend on the host webview and may be unavailable.
+- The control-center Document viewer keeps a still SVG preview (data image, no viewer script).
+  Choosing it opens the same file in this editor. Chat never runs the viewer's scripts.
 
 ### 2.2. Canonical source and output paths
 
-- Store JSON once in a Document package's `assets/`, linked from its `SKILL.md` or reachable
-  reference. Preserve readable meaning near the link; follow [Diagrams](diagrams.md#document-assets).
+- Store JSON once in `docs/artifact/diagram/`, linked by a relative path from each Document's
+  `SKILL.md` or reachable reference. The Document preview and independent Archify view read the same
+  original and refresh after it is saved. Existing package `assets/` inputs remain readable for compatibility.
+  Preserve readable meaning near the link; follow [Diagrams](diagrams.md#document-assets).
 - Use existing or agreed paths for dependencies. `install --tool-dir <run-or-agreed-runtime-directory>/archify-3.0.1`
   prepares a new directory outside the project checkout; its parent must exist. Existing targets are never replaced.
 - Read [CLI arguments](../../tool/references/usage/archify.md) before execution. Paths inside
@@ -45,8 +58,8 @@
 
 ```sh
 python3 <plugin-root>/scripts/archify.py install --tool-dir <run-directory>/archify-3.0.1
-python3 <plugin-root>/scripts/archify.py validate --project-root <project-root> --tool-dir <tool-dir> docs/skills/<package>/assets/system.architecture.json
-python3 <plugin-root>/scripts/archify.py render --project-root <project-root> --tool-dir <tool-dir> docs/skills/<package>/assets/system.architecture.json --output docs/artifact/interactive/<topic>__architecture.html --open
+python3 <plugin-root>/scripts/archify.py validate --project-root <project-root> --tool-dir <tool-dir> docs/artifact/diagram/system.architecture.json
+python3 <plugin-root>/scripts/archify.py render --project-root <project-root> --tool-dir <tool-dir> docs/artifact/diagram/system.architecture.json --output docs/artifact/interactive/<topic>__architecture.html --open
 python3 <plugin-root>/scripts/archify.py open --project-root <project-root> docs/artifact/interactive/<topic>__architecture.html
 ```
 
@@ -67,8 +80,9 @@ python3 <plugin-root>/scripts/archify.py open --project-root <project-root> docs
 
 - `--open` or `open` uses the OS browser (`xdg-open`, macOS `open`, Windows file association),
   with an argument array and no shell. It runs on the machine hosting the CLI/files.
-- Existing Agent Factory local Markdown links open files in VS Code. For interactive HTML,
-  run `open` or open the generated file in an external browser. Do not inject HTML into chat.
+- Existing Agent Factory local Markdown links open files in VS Code; a linked Archify JSON opens
+  in the interactive editor above. For generated HTML, run `open` or use an external browser.
+  Do not inject HTML into chat.
 - In remote/headless environments, GUI opening may be unavailable; use the reported path/URI
   on a desktop with access to the files. Do not claim a GUI check from successful file generation.
 

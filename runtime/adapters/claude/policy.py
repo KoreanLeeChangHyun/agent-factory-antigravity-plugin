@@ -3,7 +3,8 @@ import json
 
 from execution import policy as execution_policy
 from storage.errors import ContractError
-from hooks import orchestrator_guard, subagent_guard
+from hooks import orchestrator_guard, subagent_guard, team_inbox
+from execution import tool_server_launch
 from .capabilities import EFFORTS, EFFORT_ALIASES
 
 # Nearest Claude permission mode for each Agent Factory sandbox type. Claude tool permissions are
@@ -40,47 +41,53 @@ def permission_arguments(session, working_directory):
     return arguments
 
 
-def work_subagent_arguments(restricted=False):
+def work_subagent_arguments():
     """Work may start only the read-only Explore sub-agent; every other sub-agent type is denied.
 
     Claude's `Agent(type)` allowlist applies only to a `--agent` main thread and deny rules name single
     types, so a PreToolUse hook decides. Hooks run before the permission mode, so the denial holds under
     bypassPermissions, acceptEdits, dontAsk and plan. Workflow scripts start sub-agents without the
     Agent tool, so that tool is removed."""
-    hook = {"matcher": subagent_guard.MATCHER,
+    return ["--disallowedTools", "Workflow"]
+
+
+def work_subagent_hook():
+    return {"matcher": subagent_guard.MATCHER,
             "hooks": [{"type": "command", "command": subagent_guard.HOOK_COMMAND, "timeout": 30}]}
-    hooks = [hook]
-    if restricted:
-        hooks.append({"matcher": "Bash|Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": orchestrator_guard.HOOK_COMMAND, "timeout": 30}]})
-    return ["--settings", json.dumps({"hooks": {"PreToolUse": hooks}}), "--disallowedTools", "Workflow"]
+
+
+def settings_arguments(pre_tool_use=()):
+    """One settings payload per launch: the PreToolUse guards the role needs and, for every run, the
+    PostToolUse hook that delivers queued team messages next to each tool result while the run works."""
+    hooks = {"PostToolUse": [{"hooks": [{"type": "command", "command": team_inbox.HOOK_COMMAND, "timeout": 10}]}]}
+    if pre_tool_use:
+        hooks["PreToolUse"] = list(pre_tool_use)
+    return ["--settings", json.dumps({"hooks": hooks})]
+
+
+def team_tools(plugin_root):
+    """Provider-neutral team messages and shared memory, and the native tools of the local tool server.
+    The server checks each call against the run's role and policy."""
+    return [*(f"Bash(python3 {plugin_root / 'scripts' / name} *)" for name in ("messages.py", "memory.py")),
+            "mcp__" + tool_server_launch.NAME]
+
+
+def tool_server_arguments():
+    """The plugin's standard actions as native tools for this run, next to any servers the user configured."""
+    command = tool_server_launch.command("claude")
+    config = {"mcpServers": {tool_server_launch.NAME: {"type": "stdio", "command": command[0], "args": command[1:]}}}
+    return ["--mcp-config", json.dumps(config)]
 
 
 def inspection_arguments(plugin_root):
-    """Allow only the existing read-only inspectors, including their page options."""
+    """Allow only the existing read-only inspectors, including their page options, and the team tools."""
     script = str(plugin_root / "scripts" / "exec.py")
-    return ["--allowedTools", ",".join(f"Bash(python3 {script} {command} *)" for command in ("status", "list"))]
+    inspectors = [f"Bash(python3 {script} {command} *)" for command in ("status", "list")]
+    return ["--allowedTools", ",".join([*inspectors, *team_tools(plugin_root)])]
 
 
 # Read-only Git inspection shared by every allowlist below.
 GIT_READS = ["Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git show*)"]
-
-
-def profile_arguments(plugin_root, profile, write_root, write_paths=(), run_directory=None):
-    """Explorer edits exact assigned evidence files; Scribe researches Documents and edits docs/.
-
-    dontAsk denies every tool not listed, under any authorized permission mode, so the profile only narrows it.
-    Each may run only its Agent Factory Document scripts, never exec.py or loop.py."""
-    tools = ["Read", "Grep", "Glob", "WebSearch", "WebFetch", *GIT_READS,
-             *(f"Bash(python3 {plugin_root}/scripts/{name} *)" for name in orchestrator_guard.PROFILE_SCRIPTS[profile])]
-    if profile == "explore":
-        for path in write_paths:
-            tools += [f"Edit(/{path})", f"Write(/{path})"]
-        if run_directory:
-            tools += [f"Edit(/{run_directory}/**)", f"Write(/{run_directory}/**)"]
-    elif write_root:
-        files = "/" + str(write_root) + "/**"
-        tools += [f"Edit({files})", f"Write({files})"]
-    return ["--permission-mode", "dontAsk", "--permission-prompts", "none", "--allowedTools", ",".join(tools)]
 
 
 def orchestrator_arguments(plugin_root, run_directory):
@@ -91,11 +98,10 @@ def orchestrator_arguments(plugin_root, run_directory):
     run_files = "/" + str(run_directory) + "/**"
     # Web tools support bounded known-context fact/link confirmation.
     tools = ["Read", "Grep", "Glob", "WebSearch", "WebFetch", f"Edit({run_files})", f"Write({run_files})",
-             f"Bash(python3 {plugin_root}/scripts/*)", *GIT_READS]
+             f"Bash(python3 {plugin_root}/scripts/*)", "mcp__" + tool_server_launch.NAME, *GIT_READS]
     return ["--permission-mode", "dontAsk", "--permission-prompts", "none", "--allowedTools", ",".join(tools)]
 
 
-def orchestrator_hook_arguments():
-    hook = {"matcher": "Bash|Write|Edit|MultiEdit", "hooks": [
+def orchestrator_hook():
+    return {"matcher": "Bash|Write|Edit|MultiEdit", "hooks": [
         {"type": "command", "command": orchestrator_guard.HOOK_COMMAND, "timeout": 30}]}
-    return ["--settings", json.dumps({"hooks": {"PreToolUse": [hook]}})]

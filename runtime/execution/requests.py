@@ -73,9 +73,12 @@ def requested_execution(runtime, args: argparse.Namespace) -> dict[str, Any]:
         if value is not None:
             options[key] = value
     context_file = getattr(args, "document_context_file", None)
-    if context_file is not None:
+    context_json = getattr(args, "document_context_json", None)
+    if context_file is not None or context_json is not None:
         from execution.document_context import validate
-        options["documentContext"] = validate(runtime.safe_read_json(context_file))
+        if context_file is not None and context_json is not None:
+            raise ValueError('Choose one document context input')
+        options["documentContext"] = validate(runtime.safe_read_json(context_file) if context_file is not None else json.loads(context_json))
     captured = getattr(args, "agent_permissions", None)
     if captured is not None:
         try:
@@ -88,6 +91,16 @@ def requested_execution(runtime, args: argparse.Namespace) -> dict[str, Any]:
         except (ValueError, TypeError) as error:
             raise runtime.ContractError("agent_permissions_invalid", str(error)) from error
         options["agentPermissions"] = roles
+    models = getattr(args, "agent_models", None)
+    if models is not None:
+        from tasks import model_candidates
+        try:
+            # Like role permissions, role model settings are Human authority captured by the Human-facing host.
+            if os.environ.get(runtime.execution_policy.PARENT_STATE_ENV):
+                raise ValueError("Role model settings must originate at the Human-facing host")
+            options["agentModels"] = model_candidates.validate(json.loads(models))
+        except (ValueError, TypeError) as error:
+            raise runtime.ContractError("agent_models_invalid", str(error)) from error
     isolation = getattr(args, "work_isolation", None)
     if isolation is not None:
         # Like role permissions, the toggle is Human authority captured by the host.

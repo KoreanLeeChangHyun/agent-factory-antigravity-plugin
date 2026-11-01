@@ -153,8 +153,6 @@ def main():
         environment.pop(orchestrator_guard.ENV, None)
         if orchestrator_guard.orchestrating(state, session):
             environment.update(orchestrator_guard.environment(state))
-        elif orchestrator_guard.work_profile(state, session):
-            environment.update(orchestrator_guard.profile_environment(state, session))
         phases = planning_phases(state)
         session_id = session.get("sessionId")
         goal = None

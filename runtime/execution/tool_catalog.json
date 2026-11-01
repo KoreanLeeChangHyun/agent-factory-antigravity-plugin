@@ -1,0 +1,6477 @@
+{
+ "generatedBy": "distribution/tool_usage.py",
+ "schemaVersion": 1,
+ "tools": [
+  {
+   "arguments": [
+    {
+     "flag": "--prompt",
+     "key": "prompt",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [],
+   "command": null,
+   "description": "Generate images using the installed Codex native image_gen tool and existing ChatGPT login. No API key or external command backend is used. Consumes the existing Codex plan's usage. A failed generation is not automatically retried. Returns actual native image bytes.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "prompt": {
+      "description": "Description of the image to generate; not a command or backend configuration",
+      "type": "string"
+     }
+    },
+    "required": [
+     "prompt"
+    ],
+    "type": "object"
+   },
+   "name": "imagegen",
+   "roles": [
+    "main",
+    "work"
+   ],
+   "script": "imagegen.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--agent",
+     "key": "agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "peers",
+   "description": "List your room's members with status; a conductor also sees the other conductors",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "agent": {
+      "description": "Whose team to list; defaults to the calling agent run",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "messages_peers",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "messages.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--room",
+     "key": "room",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--limit",
+     "key": "limit",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "room",
+   "description": "Read a room: posts, claims, change notices and the direct messages kept there",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "limit": {
+      "description": "Newest entries to show; 0 shows all",
+      "type": "string"
+     },
+     "room": {
+      "description": "project for the project room (conductors); otherwise a run reads its own room",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "messages_room",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "messages.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--agent",
+     "key": "agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--all",
+     "key": "all",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--peek",
+     "key": "peek",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "inbox",
+   "description": "Read messages addressed to the calling agent; shown messages count as delivered",
+   "effect": "records",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "agent": {
+      "description": "Outside an agent run: whose inbox to view (read-only)",
+      "type": "string"
+     },
+     "all": {
+      "description": "Include messages already delivered",
+      "type": "boolean"
+     },
+     "peek": {
+      "description": "Show without marking them delivered",
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "name": "messages_inbox",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "messages.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--to",
+     "key": "to",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--message",
+     "key": "message",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--message-file",
+     "key": "message_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--reply-to",
+     "key": "reply_to",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "send",
+   "description": "Send a message to another agent of this project Give exactly one of: message, message_file.",
+   "effect": "records",
+   "groups": [
+    {
+     "keys": [
+      "message",
+      "message_file"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "message": {
+      "description": "Message text",
+      "type": "string"
+     },
+     "message_file": {
+      "description": "UTF-8 file holding the message text",
+      "type": "string"
+     },
+     "reply_to": {
+      "description": "Message id this answers",
+      "type": "string"
+     },
+     "to": {
+      "description": "Recipient agent id (see peers)",
+      "type": "string"
+     }
+    },
+    "required": [
+     "to"
+    ],
+    "type": "object"
+   },
+   "name": "messages_send",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "messages.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--message",
+     "key": "message",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--message-file",
+     "key": "message_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--room",
+     "key": "room",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "post",
+   "description": "Post to your room (or a conductor to the project room): every member receives it, and members named with @agent-id receive the full text Give exactly one of: message, message_file.",
+   "effect": "records",
+   "groups": [
+    {
+     "keys": [
+      "message",
+      "message_file"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "message": {
+      "description": "Post text",
+      "type": "string"
+     },
+     "message_file": {
+      "description": "UTF-8 file holding the post text",
+      "type": "string"
+     },
+     "room": {
+      "description": "project for the project room (conductors); otherwise a run posts to its own room",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "messages_post",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "messages.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--paths",
+     "key": "paths",
+     "kind": "array",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--intent",
+     "key": "intent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "claim",
+   "description": "Conductor: claim files or directories your domain is about to change; an overlap with another domain's claim is reported to both at once Conductor (Main) only.",
+   "effect": "records",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "intent": {
+      "description": "What your domain changes there and why",
+      "type": "string"
+     },
+     "paths": {
+      "description": "Project-relative files or directories",
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "intent",
+     "paths"
+    ],
+    "type": "object"
+   },
+   "name": "messages_claim",
+   "roles": [
+    "main"
+   ],
+   "script": "messages.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--claim",
+     "key": "claim",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--all",
+     "key": "all",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "release",
+   "description": "Conductor: release your domain's claims when that work is done Give exactly one of: claim, all. Conductor (Main) only.",
+   "effect": "records",
+   "groups": [
+    {
+     "keys": [
+      "claim",
+      "all"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "all": {
+      "description": "Release every claim of your domain",
+      "type": "boolean"
+     },
+     "claim": {
+      "description": "Claim id to release (repeat for several)",
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "name": "messages_release",
+   "roles": [
+    "main"
+   ],
+   "script": "messages.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--paths",
+     "key": "paths",
+     "kind": "array",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--message",
+     "key": "message",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--message-file",
+     "key": "message_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "change",
+   "description": "Conductor: announce a finished change other domains may depend on (an interface, message format or shared file) Give exactly one of: message, message_file. Conductor (Main) only.",
+   "effect": "records",
+   "groups": [
+    {
+     "keys": [
+      "message",
+      "message_file"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "message": {
+      "description": "What changed and what others must adapt",
+      "type": "string"
+     },
+     "message_file": {
+      "description": "UTF-8 file holding the notice",
+      "type": "string"
+     },
+     "paths": {
+      "description": "Project-relative files or directories that changed",
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "paths"
+    ],
+    "type": "object"
+   },
+   "name": "messages_change",
+   "roles": [
+    "main"
+   ],
+   "script": "messages.py"
+  },
+  {
+   "arguments": [],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "status",
+   "description": "Conductor: the project status board, per domain its conductor, working performers and claims Conductor (Main) only.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+   },
+   "name": "messages_status",
+   "roles": [
+    "main"
+   ],
+   "script": "messages.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--all",
+     "key": "all",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "list",
+   "description": "List entries, newest first; candidates are not yet confirmed by the user",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "all": {
+      "description": "Include superseded and retired entries",
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "name": "memory_list",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "memory.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--query",
+     "key": "query",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--all",
+     "key": "all",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "search",
+   "description": "Find entries containing every query word",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "all": {
+      "description": "Include superseded and retired entries",
+      "type": "boolean"
+     },
+     "query": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "type": "object"
+   },
+   "name": "memory_search",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "memory.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--id",
+     "key": "id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "show",
+   "description": "Read one entry in full",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "id"
+    ],
+    "type": "object"
+   },
+   "name": "memory_show",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "memory.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--type",
+     "key": "type",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--title",
+     "key": "title",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--text",
+     "key": "text",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--text-file",
+     "key": "text_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--source",
+     "key": "source",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--supersedes",
+     "key": "supersedes",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "write",
+   "description": "Record one durable fact with its source Give exactly one of: text, text_file.",
+   "effect": "records",
+   "groups": [
+    {
+     "keys": [
+      "text",
+      "text_file"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "source": {
+      "description": "Where the fact comes from: run id, message id, file or URL",
+      "type": "string"
+     },
+     "supersedes": {
+      "description": "Entry this one corrects; it is retired when this entry becomes active",
+      "type": "string"
+     },
+     "text": {
+      "type": "string"
+     },
+     "text_file": {
+      "description": "UTF-8 file holding the entry text",
+      "type": "string"
+     },
+     "title": {
+      "description": "One line shown in every session's memory index",
+      "type": "string"
+     },
+     "type": {
+      "enum": [
+       "user",
+       "feedback",
+       "project",
+       "reference"
+      ],
+      "type": "string"
+     }
+    },
+    "required": [
+     "source",
+     "title",
+     "type"
+    ],
+    "type": "object"
+   },
+   "name": "memory_write",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "memory.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--query",
+     "key": "query",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--read-path",
+     "key": "read_path",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--read-selections-file",
+     "key": "read_selections_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--anchor",
+     "key": "anchor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--revision",
+     "key": "revision",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--match",
+     "key": "match",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--offset",
+     "key": "offset",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--type",
+     "key": "type",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--category",
+     "key": "category",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--limit",
+     "key": "limit",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--scope",
+     "key": "scope",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--documents-root",
+     "key": "documents_root",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--compact",
+     "key": "compact",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--pretty",
+     "key": "pretty",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root"
+   ],
+   "command": null,
+   "description": "Search the live Original, Refined, Progress and Lessons Learned Document catalog. Give exactly one of: query, read_path, read_selections_file. Give at most one of: compact, pretty.",
+   "effect": "read",
+   "groups": [
+    {
+     "keys": [
+      "query",
+      "read_path",
+      "read_selections_file"
+     ],
+     "required": true
+    },
+    {
+     "keys": [
+      "compact",
+      "pretty"
+     ],
+     "required": false
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "anchor": {
+      "description": "Read one ATX section by explicit HTML ID or heading slug; retains complete entry guidance",
+      "type": "string"
+     },
+     "category": {
+      "type": "string"
+     },
+     "compact": {
+      "description": "Reads may use shared-sources-v1, retaining complete entry guidance and metadata",
+      "type": "boolean"
+     },
+     "documents_root": {
+      "description": "Physical workspace containing docs; runtime identity stays --project-root",
+      "type": "string"
+     },
+     "limit": {
+      "type": "string"
+     },
+     "match": {
+      "description": "all preserves legacy AND search; any explicitly explores partial lexical matches",
+      "enum": [
+       "all",
+       "any"
+      ],
+      "type": "string"
+     },
+     "offset": {
+      "description": "Result page offset; totalCount and nextOffset expose all matches",
+      "type": "string"
+     },
+     "pretty": {
+      "description": "Indented inline JSON for Human reading; same value as the default",
+      "type": "boolean"
+     },
+     "query": {
+      "type": "string"
+     },
+     "read_path": {
+      "description": "Canonical project-relative Document or docs/skills text path",
+      "type": "string"
+     },
+     "read_selections_file": {
+      "description": "JSON array of canonical path, optional anchor/revision objects; one complete read bundle",
+      "type": "string"
+     },
+     "revision": {
+      "description": "Require a matching package revision when reading; stale input fails closed",
+      "type": "string"
+     },
+     "scope": {
+      "type": "string"
+     },
+     "type": {
+      "enum": [
+       "original",
+       "processed",
+       "progress",
+       "lessons-learned",
+       "refined"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "search_documents",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "search_documents.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--documents-root",
+     "key": "documents_root",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root"
+   ],
+   "command": null,
+   "description": "Build a live catalog for Original, Refined, Progress and Lessons Learned project Documents.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "documents_root": {
+      "description": "Physical workspace containing docs; runtime identity stays --project-root",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "catalog_documents",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "catalog_documents.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": null,
+     "key": "action",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input-json",
+     "key": "input_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": null,
+   "description": "Search project run evidence and lesson lifecycles, read originals and pin context selections. All operations are read-only. Selected history is evidence, never new authority.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "action": {
+      "enum": [
+       "runs",
+       "lessons",
+       "read",
+       "select",
+       "sync-status"
+      ],
+      "type": "string"
+     },
+     "input_json": {
+      "description": "Search query/scope/page, or source identity and optional character page",
+      "type": "string"
+     }
+    },
+    "required": [
+     "action"
+    ],
+    "type": "object"
+   },
+   "name": "experience",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "experience.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--host",
+     "key": "host",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--reconcile",
+     "key": "reconcile",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--check",
+     "key": "check",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--status",
+     "key": "status",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--expect-plan",
+     "key": "expect_plan",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root"
+   ],
+   "command": null,
+   "description": "Synchronize selected project Skill hosts from the authoritative docs/skills source. Give at most one of: reconcile, check, status.",
+   "effect": "project",
+   "groups": [
+    {
+     "keys": [
+      "reconcile",
+      "check",
+      "status"
+     ],
+     "required": false
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "check": {
+      "description": "Report hosts that differ from docs/skills; exit 1 when any differs. Changes nothing.",
+      "type": "boolean"
+     },
+     "expect_plan": {
+      "description": "Apply only if source, selected hosts and observed target state still match this status plan ID.",
+      "type": "string"
+     },
+     "host": {
+      "description": "Synchronize only this host; repeat to select multiple hosts (default: all hosts).",
+      "items": {
+       "enum": [
+        "codex",
+        "claude",
+        "antigravity"
+       ],
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "reconcile": {
+      "description": "Back up conflicting or interrupted output, then rebuild it from docs/skills.",
+      "type": "boolean"
+     },
+     "status": {
+      "description": "Read-only file diagnoses, host revisions, recovery state and a guarded plan ID.",
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "name": "sync_documents",
+   "roles": [
+    "main",
+    "work"
+   ],
+   "script": "sync_documents.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--apply",
+     "key": "apply",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root"
+   ],
+   "command": null,
+   "description": "Copy project Skill documents from docs/skills into .codex/skills and .claude/skills.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "apply": {
+      "description": "Copy packages; default only previews.",
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "name": "export_documents",
+   "roles": [
+    "main",
+    "work"
+   ],
+   "script": "export_documents.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--documents-root",
+     "key": "documents_root",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": null,
+     "key": "action",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input-json",
+     "key": "input_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--compact",
+     "key": "compact",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root"
+   ],
+   "choiceLimits": {
+    "action": {
+     "explore": [
+      "retrieve",
+      "audit",
+      "check",
+      "brief",
+      "pending"
+     ],
+     "main": [
+      "retrieve",
+      "audit",
+      "check",
+      "brief",
+      "pending"
+     ],
+     "verification": [
+      "retrieve",
+      "audit",
+      "check",
+      "brief",
+      "pending",
+      "record",
+      "resolve",
+      "note",
+      "evaluate"
+     ],
+     "work": [
+      "retrieve",
+      "audit",
+      "check",
+      "brief",
+      "pending",
+      "record",
+      "resolve",
+      "note",
+      "evaluate"
+     ]
+    }
+   },
+   "command": null,
+   "description": "Record, evaluate, publish and retrieve evidence-backed lessons (JSON input). Give exactly one of: input, input_json.",
+   "effect": "records",
+   "groups": [
+    {
+     "keys": [
+      "input",
+      "input_json"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "action": {
+      "enum": [
+       "check",
+       "record",
+       "resolve",
+       "retrieve",
+       "audit",
+       "candidate",
+       "evaluate",
+       "publish",
+       "sync",
+       "apply",
+       "retire",
+       "recover",
+       "note",
+       "pending",
+       "brief"
+      ],
+      "type": "string"
+     },
+     "compact": {
+      "description": "Compact JSON output without dropping records, rules or diagnostics",
+      "type": "boolean"
+     },
+     "documents_root": {
+      "description": "Physical workspace containing docs; runtime identity stays --project-root",
+      "type": "string"
+     },
+     "input": {
+      "type": "string"
+     },
+     "input_json": {
+      "description": "Inline JSON payload; avoids temporary input files for read-only queries",
+      "type": "string"
+     }
+    },
+    "required": [
+     "action"
+    ],
+    "type": "object"
+   },
+   "name": "lessons",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "lessons.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--agent",
+     "key": "agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--run-id",
+     "key": "run_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--dispatch-id",
+     "key": "dispatch_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--document",
+     "key": "document",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--field",
+     "key": "field",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--offset",
+     "key": "offset",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--length",
+     "key": "length",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--revision",
+     "key": "revision",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "status",
+   "description": "Give exactly one of: run_id, dispatch_id.",
+   "effect": "read",
+   "groups": [
+    {
+     "keys": [
+      "run_id",
+      "dispatch_id"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "agent": {
+      "type": "string"
+     },
+     "dispatch_id": {
+      "type": "string"
+     },
+     "document": {
+      "description": "Read a document as lossless Unicode text pages (default page: 4000 characters)",
+      "enum": [
+       "state",
+       "request",
+       "result",
+       "receipt",
+       "capability",
+       "loop",
+       "trace",
+       "trace-error",
+       "events",
+       "provider-events"
+      ],
+      "type": "string"
+     },
+     "field": {
+      "description": "Select a JSON Pointer before paging; strings are returned verbatim",
+      "type": "string"
+     },
+     "length": {
+      "description": "Characters per page, default 4000; no total document limit",
+      "type": "string"
+     },
+     "offset": {
+      "description": "Zero-based Unicode character offset (enables paging)",
+      "type": "string"
+     },
+     "revision": {
+      "description": "Require the SHA-256 returned by the first page; changed data fails closed",
+      "type": "string"
+     },
+     "run_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "agent"
+    ],
+    "type": "object"
+   },
+   "name": "exec_status",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "exec.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--agent",
+     "key": "agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--run-id",
+     "key": "run_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--ack",
+     "key": "ack",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "result",
+   "description": "exec_result",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "ack": {
+      "type": "boolean"
+     },
+     "agent": {
+      "type": "string"
+     },
+     "run_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "agent",
+     "run_id"
+    ],
+    "type": "object"
+   },
+   "name": "exec_result",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "exec.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--field",
+     "key": "field",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--offset",
+     "key": "offset",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--length",
+     "key": "length",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--revision",
+     "key": "revision",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "list",
+   "description": "exec_list",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "field": {
+      "description": "Select a JSON Pointer before paging; strings are returned verbatim",
+      "type": "string"
+     },
+     "length": {
+      "description": "Characters per page, default 4000; no total document limit",
+      "type": "string"
+     },
+     "offset": {
+      "description": "Zero-based Unicode character offset (enables paging)",
+      "type": "string"
+     },
+     "revision": {
+      "description": "Require the SHA-256 returned by the first page; changed data fails closed",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "exec_list",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "exec.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--task-id",
+     "key": "task_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--session-id",
+     "key": "session_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--state",
+     "key": "state",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--updated-since",
+     "key": "updated_since",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--detail",
+     "key": "detail",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "query",
+   "description": "Structural lookup by task, session, loop, state and update time",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "detail": {
+      "description": "Return the full records instead of the summary",
+      "type": "boolean"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "session_id": {
+      "description": "Agent ID of a conductor, Work or Verification session",
+      "type": "string"
+     },
+     "state": {
+      "enum": [
+       "assigned",
+       "running",
+       "waiting-external",
+       "waiting-decision",
+       "blocked",
+       "execution-ended",
+       "work-completed",
+       "check-passed",
+       "unknown"
+      ],
+      "type": "string"
+     },
+     "task_id": {
+      "type": "string"
+     },
+     "updated_since": {
+      "description": "ISO-8601 UTC lower bound for a task's latest recorded update",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "operation_records_query",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "operation_records.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--text",
+     "key": "text",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--match",
+     "key": "match",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--kind",
+     "key": "kind",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--task-id",
+     "key": "task_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--session-id",
+     "key": "session_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--state",
+     "key": "state",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--role",
+     "key": "role",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--model",
+     "key": "model",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--since",
+     "key": "since",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--until",
+     "key": "until",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--limit",
+     "key": "limit",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "search",
+   "description": "Filter records, run results and lessons, then match words; hits cite sources",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "kind": {
+      "description": "Record kind to search; repeat to combine (default: all kinds)",
+      "items": {
+       "enum": [
+        "task",
+        "session",
+        "decision",
+        "observation",
+        "lesson"
+       ],
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "limit": {
+      "description": "Maximum hits returned (default 50)",
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "match": {
+      "description": "Require all words (default) or any word",
+      "enum": [
+       "all",
+       "any"
+      ],
+      "type": "string"
+     },
+     "model": {
+      "description": "Exact model ID recorded on the run",
+      "type": "string"
+     },
+     "role": {
+      "description": "Session role (conductor, work, verification) or Work profile",
+      "type": "string"
+     },
+     "session_id": {
+      "description": "Agent ID of a conductor, Work or Verification session",
+      "type": "string"
+     },
+     "since": {
+      "description": "ISO-8601 date or time lower bound (UTC when no zone)",
+      "type": "string"
+     },
+     "state": {
+      "enum": [
+       "assigned",
+       "running",
+       "waiting-external",
+       "waiting-decision",
+       "blocked",
+       "execution-ended",
+       "work-completed",
+       "check-passed",
+       "unknown"
+      ],
+      "type": "string"
+     },
+     "task_id": {
+      "type": "string"
+     },
+     "text": {
+      "description": "Words to find in requests, results, decisions and lessons (case-insensitive)",
+      "type": "string"
+     },
+     "until": {
+      "description": "ISO-8601 date or time upper bound (UTC when no zone)",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "operation_records_search",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "operation_records.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--interval-minutes",
+     "key": "interval_minutes",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--delay-minutes",
+     "key": "delay_minutes",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--stuck-minutes",
+     "key": "stuck_minutes",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--repeat-limit",
+     "key": "repeat_limit",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--save-settings",
+     "key": "save_settings",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--dry-run",
+     "key": "dry_run",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "supervise",
+   "description": "Judge unfinished loops (normal, delayed, stuck, decision-needed) and record due one-line reports Conductor (Main) only.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "delay_minutes": {
+      "description": "No recorded activity for this long is delayed (default 20)",
+      "type": "string"
+     },
+     "dry_run": {
+      "description": "Return verdicts without appending reports",
+      "type": "boolean"
+     },
+     "interval_minutes": {
+      "description": "Periodic report interval (default 10); stuck and decision-needed are reported at once",
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "repeat_limit": {
+      "description": "Repeats of one control-plane error or failed Verification that are reported (default 3)",
+      "type": "string"
+     },
+     "save_settings": {
+      "description": "Persist the resulting values as this runtime's defaults, also used by the loop driver",
+      "type": "boolean"
+     },
+     "stuck_minutes": {
+      "description": "No recorded activity for this long is stuck (default 60)",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "operation_records_supervise",
+   "roles": [
+    "main"
+   ],
+   "script": "operation_records.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--target",
+     "key": "target",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--out",
+     "key": "out",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--viewport",
+     "key": "viewport",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--scale",
+     "key": "scale",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-for",
+     "key": "wait_for",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--click",
+     "key": "click",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-ms",
+     "key": "wait_ms",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--element",
+     "key": "element",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--full-page",
+     "key": "full_page",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--timeout-sec",
+     "key": "timeout_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "capture",
+   "description": "Screenshot a page or local file with an installed Playwright and save its browser log",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "click": {
+      "description": "CSS selector clicked before the capture; repeat in order",
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "element": {
+      "description": "Capture only the first visible element matching this selector",
+      "type": "string"
+     },
+     "full_page": {
+      "description": "Capture the whole scrollable page",
+      "type": "boolean"
+     },
+     "out": {
+      "description": "PNG path; the browser log is written beside it as <name>.log.json",
+      "type": "string"
+     },
+     "scale": {
+      "description": "Device scale factor",
+      "type": "string"
+     },
+     "target": {
+      "description": "http(s) URL or a local HTML/SVG/image file path",
+      "type": "string"
+     },
+     "timeout_sec": {
+      "type": "string"
+     },
+     "viewport": {
+      "description": "WIDTHxHEIGHT in CSS pixels",
+      "type": "string"
+     },
+     "wait_for": {
+      "description": "CSS selector that must appear before anything else",
+      "type": "string"
+     },
+     "wait_ms": {
+      "description": "Extra settle time after the clicks",
+      "type": "string"
+     }
+    },
+    "required": [
+     "out",
+     "target"
+    ],
+    "type": "object"
+   },
+   "name": "evidence_capture",
+   "roles": [
+    "main",
+    "work",
+    "verification"
+   ],
+   "script": "evidence.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--check",
+     "key": "check",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--file",
+     "key": "file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--set",
+     "key": "set",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--jobs",
+     "key": "jobs",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--timeout-sec",
+     "key": "timeout_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--save-baseline",
+     "key": "save_baseline",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "checks",
+   "description": "Run named checks in parallel and compare them with this project's saved baseline",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "check": {
+      "description": "A check run by the shell in the project root; repeat",
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "file": {
+      "description": "JSON {\"checks\":[{\"name\",\"command\",\"cwd\"?}]} with more checks",
+      "type": "string"
+     },
+     "jobs": {
+      "type": "string"
+     },
+     "save_baseline": {
+      "description": "Store this run as the baseline of --set",
+      "type": "boolean"
+     },
+     "set": {
+      "description": "Baseline name, for separate check groups",
+      "type": "string"
+     },
+     "timeout_sec": {
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "evidence_checks",
+   "roles": [
+    "main",
+    "work",
+    "verification"
+   ],
+   "script": "evidence.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--name",
+     "key": "name",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--purpose",
+     "key": "purpose",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-sec",
+     "key": "wait_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": null,
+     "key": "argv",
+     "kind": "array",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "hold",
+   "description": "Run a command while holding a named shared test environment; other holders wait",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "argv": {
+      "description": "The command and its arguments",
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "name": {
+      "description": "Environment name, such as dev-server or sandbox-app",
+      "type": "string"
+     },
+     "purpose": {
+      "description": "What the holder is doing, shown to sessions that wait",
+      "type": "string"
+     },
+     "wait_sec": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "argv",
+     "name",
+     "purpose"
+    ],
+    "type": "object"
+   },
+   "name": "evidence_hold",
+   "roles": [
+    "main",
+    "work",
+    "verification"
+   ],
+   "script": "evidence.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--tool",
+     "key": "tool",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [],
+   "command": "catalog",
+   "description": "List versioned tools, JSON schemas, drivers and limitations; launches nothing",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "tool": {
+      "enum": [
+       "test.start",
+       "test.observe",
+       "test.act",
+       "test.inspect",
+       "test.check",
+       "test.reset",
+       "test.review",
+       "test.finish",
+       "test.doctor",
+       "test.setup",
+       "test.environments",
+       "test.configure"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "testing_catalog",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "doctor",
+   "description": "Detect dependencies and verify a real Chromium launch; read-only",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+   },
+   "name": "testing_doctor",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "setup",
+   "description": "Install missing per-user Node.js, Playwright and Chromium, then verify launch",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+   },
+   "name": "testing_setup",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "environments",
+   "description": "List saved project environments and retained sessions",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+   },
+   "name": "testing_environments",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--profile",
+     "key": "profile",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input-json",
+     "key": "input_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "configure",
+   "description": "Validate and save a named environment in project runtime storage Give exactly one of: input, input_json.",
+   "effect": "project",
+   "groups": [
+    {
+     "keys": [
+      "input",
+      "input_json"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "type": "string"
+     },
+     "input_json": {
+      "type": "string"
+     },
+     "profile": {
+      "description": "Environment identifier",
+      "type": "string"
+     }
+    },
+    "required": [
+     "profile"
+    ],
+    "type": "object"
+   },
+   "name": "testing_configure",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--file",
+     "key": "file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--profile",
+     "key": "profile",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-sec",
+     "key": "wait_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "start",
+   "description": "test.start: launch a dedicated environment with a frozen manifest Give exactly one of: file, profile.",
+   "effect": "project",
+   "groups": [
+    {
+     "keys": [
+      "file",
+      "profile"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "file": {
+      "description": "JSON manifest; see the catalog and testing-harness reference",
+      "type": "string"
+     },
+     "profile": {
+      "description": "Saved environment identifier",
+      "type": "string"
+     },
+     "wait_sec": {
+      "description": "Startup wait; a timeout preserves the session ID for status/finish",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "testing_start",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--session",
+     "key": "session",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "status",
+   "description": "Read session state and evidence paths, including after the supervisor stops",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "session": {
+      "description": "Session ID returned by start",
+      "type": "string"
+     }
+    },
+    "required": [
+     "session"
+    ],
+    "type": "object"
+   },
+   "name": "testing_status",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--session",
+     "key": "session",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input-json",
+     "key": "input_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-sec",
+     "key": "wait_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "observe",
+   "description": "test.observe: capture the running screen, elements and correlated logs Give at most one of: input, input_json.",
+   "effect": "project",
+   "groups": [
+    {
+     "keys": [
+      "input",
+      "input_json"
+     ],
+     "required": false
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "description": "Tool input JSON file",
+      "type": "string"
+     },
+     "input_json": {
+      "description": "Tool input JSON object; do not put secrets in shell history",
+      "type": "string"
+     },
+     "session": {
+      "description": "Session ID returned by start",
+      "type": "string"
+     },
+     "wait_sec": {
+      "description": "Request wait; timeout never retries the action automatically",
+      "type": "string"
+     }
+    },
+    "required": [
+     "session"
+    ],
+    "type": "object"
+   },
+   "name": "testing_observe",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--session",
+     "key": "session",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input-json",
+     "key": "input_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-sec",
+     "key": "wait_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "act",
+   "description": "test.act: click, fill, type, press, navigate, scroll, execute argv or drive a VS Code bridge Give at most one of: input, input_json.",
+   "effect": "project",
+   "groups": [
+    {
+     "keys": [
+      "input",
+      "input_json"
+     ],
+     "required": false
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "description": "Tool input JSON file",
+      "type": "string"
+     },
+     "input_json": {
+      "description": "Tool input JSON object; do not put secrets in shell history",
+      "type": "string"
+     },
+     "session": {
+      "description": "Session ID returned by start",
+      "type": "string"
+     },
+     "wait_sec": {
+      "description": "Request wait; timeout never retries the action automatically",
+      "type": "string"
+     }
+    },
+    "required": [
+     "session"
+    ],
+    "type": "object"
+   },
+   "name": "testing_act",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--session",
+     "key": "session",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input-json",
+     "key": "input_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-sec",
+     "key": "wait_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "inspect",
+   "description": "test.inspect: read browser state, files, HTTP responses, SQLite rows or a VS Code snapshot Give at most one of: input, input_json.",
+   "effect": "read",
+   "groups": [
+    {
+     "keys": [
+      "input",
+      "input_json"
+     ],
+     "required": false
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "description": "Tool input JSON file",
+      "type": "string"
+     },
+     "input_json": {
+      "description": "Tool input JSON object; do not put secrets in shell history",
+      "type": "string"
+     },
+     "session": {
+      "description": "Session ID returned by start",
+      "type": "string"
+     },
+     "wait_sec": {
+      "description": "Request wait; timeout never retries the action automatically",
+      "type": "string"
+     }
+    },
+    "required": [
+     "session"
+    ],
+    "type": "object"
+   },
+   "name": "testing_inspect",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--session",
+     "key": "session",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input-json",
+     "key": "input_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-sec",
+     "key": "wait_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "check",
+   "description": "test.check: evaluate a frozen scenario/check against an independently read observation Give at most one of: input, input_json.",
+   "effect": "project",
+   "groups": [
+    {
+     "keys": [
+      "input",
+      "input_json"
+     ],
+     "required": false
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "description": "Tool input JSON file",
+      "type": "string"
+     },
+     "input_json": {
+      "description": "Tool input JSON object; do not put secrets in shell history",
+      "type": "string"
+     },
+     "session": {
+      "description": "Session ID returned by start",
+      "type": "string"
+     },
+     "wait_sec": {
+      "description": "Request wait; timeout never retries the action automatically",
+      "type": "string"
+     }
+    },
+    "required": [
+     "session"
+    ],
+    "type": "object"
+   },
+   "name": "testing_check",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--session",
+     "key": "session",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input-json",
+     "key": "input_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-sec",
+     "key": "wait_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "reset",
+   "description": "test.reset: restart owned processes and restore session-owned data; retain all attempts Give at most one of: input, input_json.",
+   "effect": "project",
+   "groups": [
+    {
+     "keys": [
+      "input",
+      "input_json"
+     ],
+     "required": false
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "description": "Tool input JSON file",
+      "type": "string"
+     },
+     "input_json": {
+      "description": "Tool input JSON object; do not put secrets in shell history",
+      "type": "string"
+     },
+     "session": {
+      "description": "Session ID returned by start",
+      "type": "string"
+     },
+     "wait_sec": {
+      "description": "Request wait; timeout never retries the action automatically",
+      "type": "string"
+     }
+    },
+    "required": [
+     "session"
+    ],
+    "type": "object"
+   },
+   "name": "testing_reset",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--session",
+     "key": "session",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--input-json",
+     "key": "input_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-sec",
+     "key": "wait_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "review",
+   "description": "test.review: pause automation and open a local interactive review console; resume explicitly Give at most one of: input, input_json.",
+   "effect": "project",
+   "groups": [
+    {
+     "keys": [
+      "input",
+      "input_json"
+     ],
+     "required": false
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "description": "Tool input JSON file",
+      "type": "string"
+     },
+     "input_json": {
+      "description": "Tool input JSON object; do not put secrets in shell history",
+      "type": "string"
+     },
+     "session": {
+      "description": "Session ID returned by start",
+      "type": "string"
+     },
+     "wait_sec": {
+      "description": "Request wait; timeout never retries the action automatically",
+      "type": "string"
+     }
+    },
+    "required": [
+     "session"
+    ],
+    "type": "object"
+   },
+   "name": "testing_review",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--session",
+     "key": "session",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--wait-sec",
+     "key": "wait_sec",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "finish",
+   "description": "test.finish: save the report and stop only this session's owned environment",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "session": {
+      "description": "Session ID returned by start",
+      "type": "string"
+     },
+     "wait_sec": {
+      "description": "Request wait; timeout never retries the action automatically",
+      "type": "string"
+     }
+    },
+    "required": [
+     "session"
+    ],
+    "type": "object"
+   },
+   "name": "testing_finish",
+   "roles": [
+    "work",
+    "verification"
+   ],
+   "script": "testing.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--tool-dir",
+     "key": "tool_dir",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": null,
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root"
+   ],
+   "command": "validate",
+   "description": "Validate JSON with the official schema.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "description": "JSON in docs/artifact/diagram/; existing Document package assets/ remain readable.",
+      "type": "string"
+     },
+     "tool_dir": {
+      "description": "Pinned renderer prepared by install; required for architecture/sequence, unused for built-in ERD.",
+      "type": "string"
+     }
+    },
+    "required": [
+     "input"
+    ],
+    "type": "object"
+   },
+   "name": "archify_validate",
+   "roles": [
+    "main",
+    "work",
+    "explore",
+    "verification"
+   ],
+   "script": "archify.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--tool-dir",
+     "key": "tool_dir",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": null,
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--output",
+     "key": "output",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--open",
+     "key": "open",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root"
+   ],
+   "command": "render",
+   "description": "Validate then deliver HTML without replacing files.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "description": "JSON in docs/artifact/diagram/; existing Document package assets/ remain readable.",
+      "type": "string"
+     },
+     "open": {
+      "description": "Open generated HTML in the local OS browser.",
+      "type": "boolean"
+     },
+     "output": {
+      "description": "New docs/artifact/<fixed-domain>/<name>.html file; parent must exist, no nested directories.",
+      "type": "string"
+     },
+     "tool_dir": {
+      "description": "Pinned renderer prepared by install; required for architecture/sequence, unused for built-in ERD.",
+      "type": "string"
+     }
+    },
+    "required": [
+     "input",
+     "output"
+    ],
+    "type": "object"
+   },
+   "name": "archify_render",
+   "roles": [
+    "main",
+    "work",
+    "verification"
+   ],
+   "script": "archify.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--tool-dir",
+     "key": "tool_dir",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--viewer",
+     "key": "viewer",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [],
+   "command": "preview",
+   "description": "Validate JSON from stdin and return an isolated SVG preview; writes no project files.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "tool_dir": {
+      "description": "Pinned renderer prepared by install; required for architecture/sequence, unused for built-in ERD.",
+      "type": "string"
+     },
+     "viewer": {
+      "description": "Also return the official interactive viewer HTML for a host-isolated webview.",
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "name": "archify_preview",
+   "roles": [
+    "main",
+    "work",
+    "verification"
+   ],
+   "script": "archify.py"
+  },
+  {
+   "arguments": [],
+   "bound": [],
+   "command": "intent",
+   "description": "Persist request understanding, linked questions and completion evidence Conductor (Main) only.",
+   "effect": "records",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+   },
+   "name": "exec_intent",
+   "roles": [
+    "main"
+   ],
+   "script": "exec.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--task-list-file",
+     "key": "task_list_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "announce-tasks",
+   "description": "Prepare one Main-owned task list for presentation and dispatch Conductor (Main) only.",
+   "effect": "records",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "task_list_file": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "task_list_file"
+    ],
+    "type": "object"
+   },
+   "name": "exec_announce_tasks",
+   "roles": [
+    "main"
+   ],
+   "script": "exec.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--agent",
+     "key": "agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--run-id",
+     "key": "run_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "cancel",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "agent": {
+      "type": "string"
+     },
+     "run_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "agent",
+     "run_id"
+    ],
+    "type": "object"
+   },
+   "name": "exec_cancel",
+   "roles": [
+    "main"
+   ],
+   "script": "exec.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--task-list-file",
+     "key": "task_list_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--task-id",
+     "key": "task_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--allocation-file",
+     "key": "allocation_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--model-catalog-file",
+     "key": "model_catalog_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--request-file",
+     "key": "request_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--acceptance-id",
+     "key": "acceptance_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--workspace-file",
+     "key": "workspace_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-isolation",
+     "key": "work_isolation",
+     "kind": "boolean",
+     "negatable": true,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--task-mode",
+     "key": "task_mode",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-agent",
+     "key": "verification_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--codex",
+     "key": "codex",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--sandbox",
+     "key": "sandbox",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--execution-policy-file",
+     "key": "execution_policy_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--approval-policy",
+     "key": "approval_policy",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--network-access",
+     "key": "network_access",
+     "kind": "boolean",
+     "negatable": true,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--writable-root",
+     "key": "writable_root",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--model",
+     "key": "model",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-model",
+     "key": "work_model",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-provider",
+     "key": "work_provider",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-execution-policy-file",
+     "key": "work_execution_policy_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-human-approval-policy",
+     "key": "work_human_approval_policy",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-reasoning-effort",
+     "key": "work_reasoning_effort",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-fast",
+     "key": "work_fast",
+     "kind": "boolean",
+     "negatable": true,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-execution-mode",
+     "key": "work_execution_mode",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-model-reason",
+     "key": "work_model_reason",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-model",
+     "key": "verification_model",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-provider",
+     "key": "verification_provider",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-execution-policy-file",
+     "key": "verification_execution_policy_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-human-approval-policy",
+     "key": "verification_human_approval_policy",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-reasoning-effort",
+     "key": "verification_reasoning_effort",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-fast",
+     "key": "verification_fast",
+     "kind": "boolean",
+     "negatable": true,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-execution-mode",
+     "key": "verification_execution_mode",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-model-reason",
+     "key": "verification_model_reason",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-image-need",
+     "key": "work_image_need",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-profile",
+     "key": "work_profile",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-capability-binding-file",
+     "key": "work_capability_binding_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--verification-capability-binding-file",
+     "key": "verification_capability_binding_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--max-revisions",
+     "key": "max_revisions",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--receipt-recovery",
+     "key": "receipt_recovery",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "start",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "acceptance_id": {
+      "description": "Explicit idempotency key for the same initial acceptance; distinct keys or new brief starts are distinct tasks even for identical text",
+      "type": "string"
+     },
+     "allocation_file": {
+      "description": "Optional schemaVersion 1 allocation evidence for a single brief; stored in its taskBinding, selects no model or authority",
+      "type": "string"
+     },
+     "approval_policy": {
+      "enum": [
+       "never",
+       "on-request",
+       "untrusted",
+       "on-failure"
+      ],
+      "type": "string"
+     },
+     "codex": {
+      "type": "string"
+     },
+     "execution_policy_file": {
+      "type": "string"
+     },
+     "max_revisions": {
+      "description": "Work revisions per task after failed Verification before the loop stops for a Human decision; 0 is unlimited",
+      "type": "string"
+     },
+     "model": {
+      "type": "string"
+     },
+     "model_catalog_file": {
+      "description": "Host-supplied modelCatalog JSON; with allocation taskType the runtime records a detected-model recommendation and applies it only when no Work model is specified",
+      "type": "string"
+     },
+     "network_access": {
+      "type": "boolean"
+     },
+     "receipt_recovery": {
+      "description": "auto gives Work one repair turn for an allowlisted receipt failure; manual stops for recover-receipt",
+      "enum": [
+       "auto",
+       "manual"
+      ],
+      "type": "string"
+     },
+     "request_file": {
+      "type": "string"
+     },
+     "sandbox": {
+      "enum": [
+       "read-only",
+       "workspace-write",
+       "danger-full-access"
+      ],
+      "type": "string"
+     },
+     "task_id": {
+      "description": "Selected task in --task-list-file",
+      "type": "string"
+     },
+     "task_list_file": {
+      "description": "Announced task list; omitted for an orchestrator brief, which becomes a single runtime-derived task",
+      "type": "string"
+     },
+     "task_mode": {
+      "enum": [
+       "work",
+       "plan-work",
+       "work-verification",
+       "plan-work-verification"
+      ],
+      "type": "string"
+     },
+     "verification_agent": {
+      "type": "string"
+     },
+     "verification_capability_binding_file": {
+      "type": "string"
+     },
+     "verification_execution_mode": {
+      "enum": [
+       "cli-default",
+       "workspace-write",
+       "danger-full-access",
+       "bypass"
+      ],
+      "type": "string"
+     },
+     "verification_execution_policy_file": {
+      "description": "Exact captured role policy; preserves sandbox independently from Human approval",
+      "type": "string"
+     },
+     "verification_fast": {
+      "type": "boolean"
+     },
+     "verification_human_approval_policy": {
+      "enum": [
+       "bypass",
+       "required"
+      ],
+      "type": "string"
+     },
+     "verification_model": {
+      "type": "string"
+     },
+     "verification_model_reason": {
+      "description": "Why this registered candidate fits the task; required when the role's candidates are chosen by Main",
+      "type": "string"
+     },
+     "verification_provider": {
+      "enum": [
+       "codex",
+       "claude",
+       "antigravity"
+      ],
+      "type": "string"
+     },
+     "verification_reasoning_effort": {
+      "enum": [
+       "none",
+       "low",
+       "medium",
+       "high",
+       "xhigh",
+       "max"
+      ],
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     },
+     "work_capability_binding_file": {
+      "type": "string"
+     },
+     "work_execution_mode": {
+      "enum": [
+       "cli-default",
+       "workspace-write",
+       "danger-full-access",
+       "bypass"
+      ],
+      "type": "string"
+     },
+     "work_execution_policy_file": {
+      "description": "Exact captured role policy; preserves sandbox independently from Human approval",
+      "type": "string"
+     },
+     "work_fast": {
+      "type": "boolean"
+     },
+     "work_human_approval_policy": {
+      "enum": [
+       "bypass",
+       "required"
+      ],
+      "type": "string"
+     },
+     "work_image_need": {
+      "description": "image-tool: the task needs an image-generation tool (availability recorded, never inferred from a provider name); code-drawing: SVG, Canvas or CSS drawn in code, which needs no image tool",
+      "enum": [
+       "image-tool",
+       "code-drawing",
+       "none"
+      ],
+      "type": "string"
+     },
+     "work_isolation": {
+      "description": "Work isolation toggle; inherited from the managed Main run when captured there. On requires --workspace-file (code or read-only), defaults targets to each repository's current branch and preserves unmergeable branches without a Human wait",
+      "type": "boolean"
+     },
+     "work_model": {
+      "type": "string"
+     },
+     "work_model_reason": {
+      "description": "Why this registered candidate fits the task; required when the role's candidates are chosen by Main",
+      "type": "string"
+     },
+     "work_profile": {
+      "description": "Work profile Main chose (work = Expert, workLight = Worker, explore = Explorer, scribe = Scribe, designer = Designer, OpenAI or Google models only); selects no model or permission",
+      "enum": [
+       "work",
+       "workLight",
+       "explore",
+       "scribe",
+       "designer"
+      ],
+      "type": "string"
+     },
+     "work_provider": {
+      "enum": [
+       "codex",
+       "claude",
+       "antigravity"
+      ],
+      "type": "string"
+     },
+     "work_reasoning_effort": {
+      "enum": [
+       "none",
+       "low",
+       "medium",
+       "high",
+       "xhigh",
+       "max"
+      ],
+      "type": "string"
+     },
+     "workspace_file": {
+      "description": "Captured code/shared/read-only plan with exact repositories, target branches and integration check argv arrays",
+      "type": "string"
+     },
+     "writable_root": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "request_file",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_start",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "status",
+   "description": "Conductor (Main) only.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "loop_id": {
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_status",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--sandbox",
+     "key": "sandbox",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--execution-policy-file",
+     "key": "execution_policy_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--approval-policy",
+     "key": "approval_policy",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--network-access",
+     "key": "network_access",
+     "kind": "boolean",
+     "negatable": true,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--writable-root",
+     "key": "writable_root",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "heal",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "approval_policy": {
+      "enum": [
+       "never",
+       "on-request",
+       "untrusted",
+       "on-failure"
+      ],
+      "type": "string"
+     },
+     "execution_policy_file": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "network_access": {
+      "type": "boolean"
+     },
+     "sandbox": {
+      "enum": [
+       "read-only",
+       "workspace-write",
+       "danger-full-access"
+      ],
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     },
+     "writable_root": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_heal",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--sandbox",
+     "key": "sandbox",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--execution-policy-file",
+     "key": "execution_policy_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--approval-policy",
+     "key": "approval_policy",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--network-access",
+     "key": "network_access",
+     "kind": "boolean",
+     "negatable": true,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--writable-root",
+     "key": "writable_root",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "reconcile",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "approval_policy": {
+      "enum": [
+       "never",
+       "on-request",
+       "untrusted",
+       "on-failure"
+      ],
+      "type": "string"
+     },
+     "execution_policy_file": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "network_access": {
+      "type": "boolean"
+     },
+     "sandbox": {
+      "enum": [
+       "read-only",
+       "workspace-write",
+       "danger-full-access"
+      ],
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     },
+     "writable_root": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_reconcile",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--workflow-id",
+     "key": "workflow_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--task-id",
+     "key": "task_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--run-id",
+     "key": "run_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--message",
+     "key": "message",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "revise",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "message": {
+      "description": "Only the authorized correction, problem and acceptance checks; preserves original scope and authority",
+      "type": "string"
+     },
+     "run_id": {
+      "description": "Latest ended Work run of this exact task",
+      "type": "string"
+     },
+     "task_id": {
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     },
+     "workflow_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision_evidence",
+     "loop_id",
+     "message",
+     "run_id",
+     "task_id",
+     "work_agent",
+     "workflow_id"
+    ],
+    "type": "object"
+   },
+   "name": "loop_revise",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision",
+     "key": "decision",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--note",
+     "key": "note",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "review",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision": {
+      "description": "Optional Human decision on a legacy pending Scribe draft review; records only, never commits or reverts files",
+      "enum": [
+       "accepted",
+       "changes-requested",
+       "discarded"
+      ],
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "note": {
+      "description": "The Human's requested changes or reason",
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision",
+     "decision_evidence",
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_review",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "skip",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision_evidence",
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_skip",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--response-file",
+     "key": "response_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--response-json",
+     "key": "response_json",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "answer",
+   "description": "Give exactly one of: response_file, response_json. Conductor (Main) only.",
+   "effect": "project",
+   "groups": [
+    {
+     "keys": [
+      "response_file",
+      "response_json"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "response_file": {
+      "description": "Exact decision identity and Human answer JSON",
+      "type": "string"
+     },
+     "response_json": {
+      "description": "Inline exact decision identity and Human answer JSON",
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision_evidence",
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_answer",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--task-id",
+     "key": "task_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--run-id",
+     "key": "run_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--message",
+     "key": "message",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "steer",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "message": {
+      "description": "Authorized in-scope addition, delivered at the next safe Work turn boundary",
+      "type": "string"
+     },
+     "run_id": {
+      "type": "string"
+     },
+     "task_id": {
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision_evidence",
+     "loop_id",
+     "message",
+     "run_id",
+     "task_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_steer",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--task-id",
+     "key": "task_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "retry-preparation",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "task_id": {
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision_evidence",
+     "loop_id",
+     "task_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_retry_preparation",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--to-agent",
+     "key": "to_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--to-model",
+     "key": "to_model",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--to-reasoning-effort",
+     "key": "to_reasoning_effort",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--to-fast",
+     "key": "to_fast",
+     "kind": "boolean",
+     "negatable": true,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--reason",
+     "key": "reason",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--trigger",
+     "key": "trigger",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "handoff",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "reason": {
+      "description": "Why the task moves, recorded in the handoff bundle",
+      "type": "string"
+     },
+     "to_agent": {
+      "description": "New Work session that takes over the current and remaining tasks",
+      "type": "string"
+     },
+     "to_fast": {
+      "type": "boolean"
+     },
+     "to_model": {
+      "description": "Exact model of the new session; its provider must differ or the model must change",
+      "type": "string"
+     },
+     "to_reasoning_effort": {
+      "enum": [
+       "none",
+       "low",
+       "medium",
+       "high",
+       "xhigh",
+       "max"
+      ],
+      "type": "string"
+     },
+     "trigger": {
+      "description": "quota: the provider's usage limit ran out; Main may then hand off to another provider itself",
+      "enum": [
+       "human",
+       "quota"
+      ],
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision_evidence",
+     "loop_id",
+     "to_agent",
+     "to_model",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_handoff",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "close",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision_evidence",
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_close",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--workflow-id",
+     "key": "workflow_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--task-id",
+     "key": "task_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "stop-task",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "task_id": {
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     },
+     "workflow_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision_evidence",
+     "loop_id",
+     "task_id",
+     "work_agent",
+     "workflow_id"
+    ],
+    "type": "object"
+   },
+   "name": "loop_stop_task",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "refresh-progress",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "loop_id": {
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_refresh_progress",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--sandbox",
+     "key": "sandbox",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--execution-policy-file",
+     "key": "execution_policy_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--approval-policy",
+     "key": "approval_policy",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--network-access",
+     "key": "network_access",
+     "kind": "boolean",
+     "negatable": true,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--writable-root",
+     "key": "writable_root",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--authorization-reference",
+     "key": "authorization_reference",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--decision-evidence",
+     "key": "decision_evidence",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--additional",
+     "key": "additional",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "extend-revisions",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "enum": [
+       "main",
+       "human"
+      ],
+      "type": "string"
+     },
+     "additional": {
+      "description": "Further Work revisions the Human authorizes after the limit stopped the loop",
+      "type": "string"
+     },
+     "approval_policy": {
+      "enum": [
+       "never",
+       "on-request",
+       "untrusted",
+       "on-failure"
+      ],
+      "type": "string"
+     },
+     "authorization_reference": {
+      "type": "string"
+     },
+     "decision_evidence": {
+      "type": "string"
+     },
+     "execution_policy_file": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "network_access": {
+      "type": "boolean"
+     },
+     "sandbox": {
+      "enum": [
+       "read-only",
+       "workspace-write",
+       "danger-full-access"
+      ],
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     },
+     "writable_root": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "actor",
+     "authorization_reference",
+     "decision_evidence",
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_extend_revisions",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--sandbox",
+     "key": "sandbox",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--execution-policy-file",
+     "key": "execution_policy_file",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--approval-policy",
+     "key": "approval_policy",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--network-access",
+     "key": "network_access",
+     "kind": "boolean",
+     "negatable": true,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--writable-root",
+     "key": "writable_root",
+     "kind": "array",
+     "negatable": false,
+     "repeat": true,
+     "storeFalse": false
+    },
+    {
+     "flag": "--work-agent",
+     "key": "work_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--loop-id",
+     "key": "loop_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "recover-receipt",
+   "description": "Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "approval_policy": {
+      "enum": [
+       "never",
+       "on-request",
+       "untrusted",
+       "on-failure"
+      ],
+      "type": "string"
+     },
+     "execution_policy_file": {
+      "type": "string"
+     },
+     "loop_id": {
+      "type": "string"
+     },
+     "network_access": {
+      "type": "boolean"
+     },
+     "sandbox": {
+      "enum": [
+       "read-only",
+       "workspace-write",
+       "danger-full-access"
+      ],
+      "type": "string"
+     },
+     "work_agent": {
+      "type": "string"
+     },
+     "writable_root": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "loop_id",
+     "work_agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_recover_receipt",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--field",
+     "key": "field",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--offset",
+     "key": "offset",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--length",
+     "key": "length",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--revision",
+     "key": "revision",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "team-roster",
+   "description": "Workers by domain with availability, current, queued, waiting and failed tasks Conductor (Main) only.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "field": {
+      "description": "Select a JSON Pointer before paging; strings are returned verbatim",
+      "type": "string"
+     },
+     "length": {
+      "description": "Characters per page, default 4000; no total document limit",
+      "type": "string"
+     },
+     "offset": {
+      "description": "Zero-based Unicode character offset (enables paging)",
+      "type": "string"
+     },
+     "revision": {
+      "description": "Require the SHA-256 returned by the first page; changed data fails closed",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "name": "loop_team_roster",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--field",
+     "key": "field",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--offset",
+     "key": "offset",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--length",
+     "key": "length",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--revision",
+     "key": "revision",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--agent",
+     "key": "agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--parent-agent",
+     "key": "parent_agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--workflow-id",
+     "key": "workflow_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--task-id",
+     "key": "task_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "team-history",
+   "description": "One worker's tasks with every run's exact request, result and receipt Conductor (Main) only.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "agent": {
+      "type": "string"
+     },
+     "field": {
+      "description": "Select a JSON Pointer before paging; strings are returned verbatim",
+      "type": "string"
+     },
+     "length": {
+      "description": "Characters per page, default 4000; no total document limit",
+      "type": "string"
+     },
+     "offset": {
+      "description": "Zero-based Unicode character offset (enables paging)",
+      "type": "string"
+     },
+     "parent_agent": {
+      "description": "Owning Main agent of the selected task",
+      "type": "string"
+     },
+     "revision": {
+      "description": "Require the SHA-256 returned by the first page; changed data fails closed",
+      "type": "string"
+     },
+     "task_id": {
+      "type": "string"
+     },
+     "workflow_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "agent"
+    ],
+    "type": "object"
+   },
+   "name": "loop_team_history",
+   "roles": [
+    "main"
+   ],
+   "script": "loop.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [],
+   "command": null,
+   "description": "Append Main's sourced control/decision record to its bound contract execution record. Conductor (Main) only.",
+   "effect": "records",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "input": {
+      "description": "JSON control/decision record inside this Main run",
+      "type": "string"
+     }
+    },
+    "required": [
+     "input"
+    ],
+    "type": "object"
+   },
+   "name": "coordination",
+   "roles": [
+    "main"
+   ],
+   "script": "coordination.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--input",
+     "key": "input",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--main-state",
+     "key": "main_state",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--apply",
+     "key": "apply",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [],
+   "command": null,
+   "description": "Check or perform a Main-owned evidence-bound ordinary local commit. Conductor (Main) only.",
+   "effect": "project",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "apply": {
+      "description": "Perform the approved ordinary local commit; default checks only",
+      "type": "boolean"
+     },
+     "input": {
+      "description": "Exact approved commit manifest inside this Main run",
+      "type": "string"
+     },
+     "main_state": {
+      "description": "Canonical running direct Main state when no guard binding is inherited",
+      "type": "string"
+     }
+    },
+    "required": [
+     "input"
+    ],
+    "type": "object"
+   },
+   "name": "commit",
+   "roles": [
+    "main"
+   ],
+   "script": "commit.py"
+  },
+  {
+   "arguments": [],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "list",
+   "description": "Read the project's domains, worker memberships, unresolved workers and recent change history Conductor (Main) only.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+   },
+   "name": "domains_list",
+   "roles": [
+    "main"
+   ],
+   "script": "domains.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--source",
+     "key": "source",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--expected-revision",
+     "key": "expected_revision",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--name",
+     "key": "name",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "create",
+   "description": "Create a domain with a real work-area name; for ai an existing matching name is reused Conductor (Main) only.",
+   "effect": "records",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "description": "human for control-center edits; ai for Main. Main may not change Human edits",
+      "enum": [
+       "human",
+       "ai"
+      ],
+      "type": "string"
+     },
+     "expected_revision": {
+      "description": "Fail with domain_conflict if the list changed since this revision",
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "source": {
+      "description": "Evidence for the change, such as the Main run ID",
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "name",
+     "source"
+    ],
+    "type": "object"
+   },
+   "name": "domains_create",
+   "roles": [
+    "main"
+   ],
+   "script": "domains.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--source",
+     "key": "source",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--expected-revision",
+     "key": "expected_revision",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--agent",
+     "key": "agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--name",
+     "key": "name",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "link",
+   "description": "Main: reuse or create the named domain and place the worker unless the Human placed it Conductor (Main) only.",
+   "effect": "records",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "description": "human for control-center edits; ai for Main. Main may not change Human edits",
+      "enum": [
+       "human",
+       "ai"
+      ],
+      "type": "string"
+     },
+     "agent": {
+      "type": "string"
+     },
+     "expected_revision": {
+      "description": "Fail with domain_conflict if the list changed since this revision",
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "source": {
+      "description": "Evidence for the change, such as the Main run ID",
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "agent",
+     "name",
+     "source"
+    ],
+    "type": "object"
+   },
+   "name": "domains_link",
+   "roles": [
+    "main"
+   ],
+   "script": "domains.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--agent",
+     "key": "agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "conductors",
+   "description": "Read one chat's conductor (Main) sessions and the domain label of each Conductor (Main) only.",
+   "effect": "read",
+   "groups": [],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "agent": {
+      "description": "Any Main session of the chat, such as your own agent ID",
+      "type": "string"
+     }
+    },
+    "required": [
+     "agent"
+    ],
+    "type": "object"
+   },
+   "name": "domains_conductors",
+   "roles": [
+    "main"
+   ],
+   "script": "domains.py"
+  },
+  {
+   "arguments": [
+    {
+     "flag": "--actor",
+     "key": "actor",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--source",
+     "key": "source",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--expected-revision",
+     "key": "expected_revision",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--agent",
+     "key": "agent",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--domain-id",
+     "key": "domain_id",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--name",
+     "key": "name",
+     "kind": "string",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    },
+    {
+     "flag": "--clear",
+     "key": "clear",
+     "kind": "boolean",
+     "negatable": false,
+     "repeat": false,
+     "storeFalse": false
+    }
+   ],
+   "bound": [
+    "--project-root",
+    "--runtime-home",
+    "--project-id"
+   ],
+   "command": "label-conductor",
+   "description": "Label a conductor (Main) session with a domain; ai cannot change a label the Human set Give exactly one of: domain_id, name, clear. Conductor (Main) only.",
+   "effect": "records",
+   "groups": [
+    {
+     "keys": [
+      "domain_id",
+      "name",
+      "clear"
+     ],
+     "required": true
+    }
+   ],
+   "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+     "actor": {
+      "description": "human for control-center edits; ai for Main. Main may not change Human edits",
+      "enum": [
+       "human",
+       "ai"
+      ],
+      "type": "string"
+     },
+     "agent": {
+      "description": "The Main session to label, from conductors",
+      "type": "string"
+     },
+     "clear": {
+      "description": "Remove the session's label",
+      "type": "boolean"
+     },
+     "domain_id": {
+      "description": "A listed domain",
+      "type": "string"
+     },
+     "expected_revision": {
+      "description": "Fail with domain_conflict if the list changed since this revision",
+      "type": "string"
+     },
+     "name": {
+      "description": "A domain name: an existing domain is reused, otherwise it is created",
+      "type": "string"
+     },
+     "source": {
+      "description": "Evidence for the change, such as the Main run ID",
+      "type": "string"
+     }
+    },
+    "required": [
+     "actor",
+     "agent",
+     "source"
+    ],
+    "type": "object"
+   },
+   "name": "domains_label_conductor",
+   "roles": [
+    "main"
+   ],
+   "script": "domains.py"
+  }
+ ]
+}

@@ -206,11 +206,13 @@ def read_selections(root, selections, documents_root=None):
     return dict(schemaVersion='0.1.0', kind='document-read-context', reads=reads, candidates=[])
 
 
-def encode_result(result, *, compact=False):
-    """Keep legacy CLI output by default; opt in to lossless source sharing."""
-    if not compact:
+def encode_result(result, *, compact=False, pretty=False):
+    """Keep the inline value by default, without indentation for its model reader; opt in to lossless source sharing."""
+    if pretty:
         return json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
     inline = json.dumps(result, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
+    if not compact:
+        return inline
     if result.get('kind') in ('document-read', 'document-read-context'):
         from execution.document_context import encode_context
 
@@ -241,7 +243,9 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--scope")
     parser.add_argument("--documents-root", type=Path, help="Physical workspace containing docs; runtime identity stays --project-root")
-    parser.add_argument("--compact", action="store_true", help="Compact JSON; reads may use shared-sources-v1, retaining complete entry guidance and metadata")
+    output_format = parser.add_mutually_exclusive_group()
+    output_format.add_argument("--compact", action="store_true", help="Reads may use shared-sources-v1, retaining complete entry guidance and metadata")
+    output_format.add_argument("--pretty", action="store_true", help="Indented inline JSON for Human reading; same value as the default")
     args = parser.parse_args()
     try:
         if args.read_path:
@@ -254,7 +258,7 @@ def main() -> int:
                 results = read_selections(args.project_root, selections, args.documents_root)
             else:
                 results = search(args.project_root, args.query, args.type, args.category, args.limit, args.scope, args.documents_root, args.match, args.offset)
-        output = encode_result(results, compact=args.compact)
+        output = encode_result(results, compact=args.compact, pretty=args.pretty)
     except (OSError, TypeError, ValueError, ContractError) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 1

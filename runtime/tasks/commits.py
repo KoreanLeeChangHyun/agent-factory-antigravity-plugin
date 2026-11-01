@@ -1,4 +1,4 @@
-"""Main's receipt-bound ordinary local commit; no arbitrary Git argv or hook bypass."""
+"""Main's evidence-bound ordinary local commit; no arbitrary Git argv or hook bypass."""
 from __future__ import annotations
 
 import hashlib
@@ -24,6 +24,9 @@ def git(repository, *arguments):
     environment["GIT_LITERAL_PATHSPECS"] = "1"
     result = subprocess.run(["git", "-C", str(repository), *arguments], env=environment,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+    if (arguments == ("rev-parse", "--verify", "--quiet", "HEAD")
+            and result.returncode == 1):
+        return b""
     if result.returncode:
         raise ContractError("commit_git_failed", result.stderr.decode("utf-8", "replace").strip())
     return result.stdout
@@ -37,6 +40,34 @@ def lesson_removals(repository):
 
 def evidence(root, main_state, proposal):
     """Completion belongs to the selected route, not a newly invented Verification gate."""
+    if main_state.get("taskMode") == "direct":
+        if any(key in proposal for key in ("workStatePath", "verificationStatePath", "loopStatePath")):
+            fail("Direct commits use Main's own checks, not managed-run evidence")
+        state_path = Path(main_state["statePath"])
+        value = proposal.get("directEvidencePath")
+        if not isinstance(value, str) or not value:
+            fail("Provide this direct Main run's own-check evidence")
+        path = Path(value)
+        if (not path.is_absolute() or has_symlink(path) or path.resolve() != path
+                or not path.is_relative_to(state_path.parent)):
+            fail("Direct evidence must belong to this Main run")
+        own = safe_read_json(path)
+        if (own.get("mainStatePath") != str(state_path)
+                or own.get("agentId") != main_state["agentId"]
+                or own.get("runId") != main_state["runId"]):
+            fail("Direct evidence belongs to another Main run")
+        checks = own.get("checks")
+        changed_paths = own.get("changedPaths")
+        if (not isinstance(checks, list) or not checks
+                or any(not isinstance(check, dict) or check.get("outcome") != "passed"
+                       or not isinstance(check.get("command"), str) or not check["command"].strip()
+                       for check in checks)
+                or not isinstance(changed_paths, list) or not changed_paths
+                or any(not isinstance(item, str) for item in changed_paths)):
+            fail("Record successful own checks and exact changed paths")
+        return own
+    if "directEvidencePath" in proposal or not proposal.get("workStatePath"):
+        fail("Managed commits require their completed Work evidence")
     work_path = Path(proposal["workStatePath"])
     if has_symlink(work_path):
         fail("Unsafe Work evidence path")
@@ -88,9 +119,9 @@ def validate(root, main_state, proposal):
     if main_state.get("role") != "main" or main_state.get("roleBoundaryPolicy") != 1:
         fail("Only Main owns ordinary commits")
     required = {"repository", "branch", "head", "paths", "contentHashes", "diffHash", "message",
-                "workStatePath", "authority"}
+                "authority"}
     if not isinstance(proposal, dict) or not required.issubset(proposal) or set(proposal) - required - {
-            "verificationStatePath", "loopStatePath"}:
+            "workStatePath", "directEvidencePath", "verificationStatePath", "loopStatePath"}:
         fail("Provide the exact commit manifest; arbitrary Git options are forbidden")
     authority = proposal["authority"]
     if (not isinstance(authority, dict) or authority.get("decision") != "approved"
@@ -110,18 +141,19 @@ def validate(root, main_state, proposal):
     receipt = evidence(root, main_state, proposal)
     paths = proposal["paths"]
     if not isinstance(paths, list) or not paths or any(not isinstance(p, str) for p in paths) or len(set(paths)) != len(paths):
-        fail("Select exact receipt-bound files")
+        fail("Select exact evidence-bound files")
     removals = lesson_removals(repository) if any(operational_path(p) for p in paths) else set()
     for value in paths:
         if (not isinstance(value, str) or not value or Path(value).is_absolute() or ".." in Path(value).parts
                 or str(Path(value)) != value or "\\" in value or ".git" in Path(value).parts
-                or has_symlink(repository / value) or (repository / value).is_dir()):
+                or has_symlink(repository / value)):
             fail("Unsafe commit file path")
+        content_hash(repository, value)
         if operational_path(value) and value not in removals:
             fail("Operational lesson records are local data; only staged index removals may be committed")
         project_path = str((repository / value).relative_to(root))
         if project_path not in receipt["changedPaths"]:
-            fail("Commit path is not in the completed Work receipt")
+            fail("Commit path is not in the selected route's completion evidence")
     if not isinstance(proposal["message"], str) or not proposal["message"].strip():
         fail("Provide a commit message")
     if set(proposal["contentHashes"]) != set(paths):
@@ -129,10 +161,29 @@ def validate(root, main_state, proposal):
     return repository
 
 
+def content_hash(repository, value):
+    """Bind regular file bytes or a tracked submodule's clean, exact HEAD."""
+    path = repository / value
+    if has_symlink(path):
+        fail("File type changed")
+    if path.is_dir():
+        entry = git(repository, "ls-files", "--stage", "-z", "--", value)
+        if not entry.startswith(b"160000 ") or len(entry.rstrip(b"\0").split(b"\0")) != 1:
+            fail("Directories must be tracked submodule references")
+        if (has_symlink(path / ".git")
+                or Path(git(path, "rev-parse", "--show-toplevel").decode().strip()) != path):
+            fail("Submodule checkout changed")
+        if git(path, "status", "--porcelain=v1", "--untracked-files=all", "-z"):
+            fail("Commit submodule changes before its parent reference")
+        return hashlib.sha256(git(path, "rev-parse", "HEAD").strip()).hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+
 def check_changes(repository, proposal, *, staged=False):
     if git(repository, "symbolic-ref", "--short", "HEAD").decode().strip() != proposal["branch"]:
         fail("Branch changed")
-    if git(repository, "rev-parse", "HEAD").decode().strip() != proposal["head"]:
+    head = git(repository, "rev-parse", "--verify", "--quiet", "HEAD").decode().strip() or None
+    if head != proposal["head"]:
         fail("HEAD changed")
     # Any pending merge/rebase/cherry-pick is outside ordinary commit authority.
     for name in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"):
@@ -143,23 +194,20 @@ def check_changes(repository, proposal, *, staged=False):
         fail("Resolve code conflicts through assigned Work")
     removals = lesson_removals(repository) if any(operational_path(p) for p in proposal["paths"]) else set()
     for value, expected in proposal["contentHashes"].items():
-        path = repository / value
-        if has_symlink(path) or path.is_dir():
-            fail("File type changed")
         # An authorized untracking keeps the local body. Its commit contains only a
         # deletion, so later recording must not invalidate the migration manifest.
-        actual = None if value in removals else hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+        actual = None if value in removals else content_hash(repository, value)
         if actual != expected:
             fail("Approved file content changed")
     # Untracked additions appear in `git diff HEAD` only after staging. Keep the approved
     # diff stable across that transition; every added file is already bound by contentHashes.
-    tracked = set(git(repository, "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", *proposal["paths"])
-                  .decode().rstrip("\0").split("\0")) - {""}
+    tracked = (set(git(repository, "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", *proposal["paths"])
+                   .decode().rstrip("\0").split("\0")) - {""}) if head else set()
     existing = [path for path in proposal["paths"] if path in tracked]
     diff = git(repository, "diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD", "--", *existing) if existing else b""
     if hashlib.sha256(diff).hexdigest() != proposal["diffHash"]:
         fail("Approved diff changed")
-    index = set(git(repository, "diff", "--cached", "--name-only", "-z").decode().rstrip("\0").split("\0")) - {""}
+    index = set(git(repository, "diff", "--cached", "--name-only", "--no-renames", "-z").decode().rstrip("\0").split("\0")) - {""}
     if index - set(proposal["paths"]):
         fail("Unrelated staged changes must remain untouched")
     if staged:
@@ -180,22 +228,37 @@ def execute(root, main_state, proposal, *, apply=False):
         check_changes(repository, proposal)
         if not apply:
             return {"status": "ready", "repository": str(repository), "paths": proposal["paths"]}
-        additions = [path for path in proposal["paths"] if not operational_path(path)]
+        staged = set(git(repository, "diff", "--cached", "--name-only", "--no-renames", "-z")
+                     .decode().rstrip("\0").split("\0")) - {""}
+        additions = [path for path in proposal["paths"] if not operational_path(path) and path not in staged]
         if additions:
             git(repository, "add", "--", *additions)
         check_changes(repository, proposal, staged=True)
+        git(repository, "diff", "--cached", "--check")
         # Hooks run normally. A failure leaves the exact staged set for Main to report; never reset it.
         git(repository, "commit", "-m", proposal["message"])
         return {"status": "committed", "repository": str(repository),
                 "commit": git(repository, "rev-parse", "HEAD").decode().strip(), "paths": proposal["paths"]}
 
 
-def bound_main(config):
-    path = config.get("captureStatePath")
-    if not path or has_symlink(path):
+def bound_main(config, main_state_path=None):
+    captured = config.get("captureStatePath")
+    if captured and main_state_path and captured != main_state_path:
+        fail("Explicit Main state cannot replace the captured run")
+    path = captured or main_state_path
+    if (not isinstance(path, str) or not path or not Path(path).is_absolute()
+            or has_symlink(path) or str(Path(path).resolve()) != path):
         fail("Use this tool from a bound Main run")
     state = safe_read_json(Path(path))
     if state.get("role") != "main" or state.get("statePath") != path:
         fail("Main run binding is invalid")
-    runtime_paths.bind(state["runtimeBinding"])
-    return Path(state["runtimeBinding"]["projectRoot"]), state
+    binding = runtime_paths.bind(state["runtimeBinding"])
+    if not captured:
+        # Direct runs intentionally do not arm the orchestrator's restrictive guard.
+        # Resolve their explicit state through the registry, never a fabricated binding.
+        expected = (Path(binding["agentsRoot"]) / state["agentId"] / "runs" / state["runId"] / "state.json")
+        if (Path(path) != expected or state.get("taskMode") != "direct"
+                or state.get("roleBoundaryPolicy") != 1 or state.get("status") != "running"
+                or state.get("cancelRequested")):
+            fail("Explicit state must be the canonical running direct Main run")
+    return Path(binding["projectRoot"]), state

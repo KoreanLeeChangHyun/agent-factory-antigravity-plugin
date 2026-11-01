@@ -30,18 +30,21 @@ def absolute(value) -> Path:
 def inspect(path: Path, *, missing=False):
     """Reject links at every component, including custom-home ancestors."""
     path = absolute(path)
-    cursor = Path(path.anchor)
-    for part in path.parts[1:]:
-        cursor /= part
+    # Same lstat walk as joining Path objects, without one Path allocation per component.
+    cursor = path.anchor
+    parts = path.parts[1:]
+    last = len(parts) - 1
+    for position, part in enumerate(parts):
+        cursor = os.path.join(cursor, part)
         try:
-            info = cursor.lstat()
+            info = os.lstat(cursor)
         except FileNotFoundError:
             if missing:
                 return
             raise
         if portable.is_link(info):
             raise ValueError('runtime symlink is forbidden')
-        if cursor != path and not stat.S_ISDIR(info.st_mode):
+        if position != last and not stat.S_ISDIR(info.st_mode):
             raise ValueError('runtime ancestor is not a directory')
     return info
 
@@ -268,17 +271,18 @@ def project_json(path, value):
     binding = next(b for b in _BINDINGS.values() if b['runtimeRoot'] == str(runtime))
     if path.name not in {'state.json', 'session.json', 'native-session.json', 'response.schema.json'}:
         return value
-    if marker.exists():
+    migrated = marker.exists()
+    if migrated:
         from storage import migration
         record = read(marker)
         expected = Path(binding['home']) / 'migrations' / record['planId'] / 'plan.json'
         if record.get('schemaVersion') != 1 or record.get('planPath') != str(expected):
             raise ValueError('invalid migration overlay')
         plan = migration.validate(read(expected), historical=True)
-    import copy
-    result = copy.deepcopy(value)
+    # The only caller passes a freshly parsed document, so it is updated in place.
+    result = value
     def locator(item):
-        if not isinstance(item, str) or not marker.exists():
+        if not isinstance(item, str) or not migrated:
             return item
         candidate = absolute(item)
         for project in sorted(plan['projects'], key=lambda p: len(p['projectRoot']), reverse=True):

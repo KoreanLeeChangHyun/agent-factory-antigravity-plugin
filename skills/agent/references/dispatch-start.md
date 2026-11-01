@@ -44,7 +44,7 @@
 
 | Captured route | Command |
 |---|---|
-| `orchestrate` brief | `python3 <plugin-root>/scripts/loop.py start --project-root PROJECT --task-mode work --work-agent UNIQUE_WORK_ID --request-file BRIEF --work-profile PROFILE`; `PROFILE`: `work`, `workLight`, `explore` or `scribe`. Begin `BRIEF` with a `Title: <a few words naming the work>` line (about 20 characters, a noun phrase in the Human's language, never the instruction itself); the runtime uses it as the task title. For explicit Verification, select `--task-mode work-verification` and supply `--verification-agent ID`. |
+| `orchestrate` brief | `python3 <plugin-root>/scripts/loop.py start --project-root PROJECT --task-mode work --work-agent UNIQUE_WORK_ID --request-file BRIEF --work-profile PROFILE`; `PROFILE`: `work`, `workLight`, `explore`, `scribe` or `designer` (images; an OpenAI or Google `--work-model`). Begin `BRIEF` with a `Title: <a few words naming the work>` line (about 20 characters, a noun phrase in the Human's language, never the instruction itself); the runtime uses it as the task title. For explicit Verification, select `--task-mode work-verification` and supply `--verification-agent ID`. |
 | `work`, `plan-work` | `python3 <plugin-root>/scripts/loop.py start --project-root PROJECT --task-mode MODE --work-agent UNIQUE_WORK_ID --request-file REQUEST` |
 | `work-verification`, `plan-work-verification` | Same loop command, plus `--verification-agent UNIQUE_VERIFICATION_ID`. |
 | `plan` | `python3 <plugin-root>/scripts/exec.py submit --project-root PROJECT --role work --task-mode plan --agent UNIQUE_WORK_ID --request-file REQUEST`; actual Plan mode, no implementation. |

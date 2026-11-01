@@ -73,7 +73,7 @@
 ## 4. Package and derived copies
 
 - Use the [directory layout](layout.md) for paths and [Document format](format.md)
-  for entry files, references, assets, language and metadata.
+  for entry files, references, linked artifacts, language and metadata.
 - Update the canonical source and regenerate `.codex/skills/`, `.claude/skills/`, `.agents/skills/` or displays from it. Do not
   require an English translation, paired HTML, counterpart metadata or a two-source
   synchronization transaction. A stale copy gains no competing authority.
